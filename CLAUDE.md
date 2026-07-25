@@ -1,29 +1,69 @@
 # smart_network_diagnostic (NetDiagnose)
 
 Flutter app (Android/iOS/Linux/macOS/Web/Windows) that runs a one-tap network
-diagnostic: ping latency, download speed, packet loss, and a basic WiFi
-security check. App display title is "NetDiagnose"; package/applicationId is
-`com.example.smart_network_diagnostic`.
+diagnostic: ping latency, download/upload speed, packet loss, jitter, a WiFi
+security check, connection-type detection, ISP/router/mobile fault diagnosis,
+and scan history. App display title is "NetDiagnose"; package/applicationId
+is `com.example.smart_network_diagnostic`.
 
 ## Layout
 
-- `lib/main.dart` — entire UI (`MyApp`, `HomeScreen`) plus `NetworkTester`,
-  a static-method class doing real HTTP-based checks:
-  - `testPing()` — HEAD request to `https://www.google.com`, times round trip.
-  - `testSpeed()` — GETs `https://proof.ovh.net/files/1Mb.dat`, computes Mbps
-    from elapsed time and byte count.
-  - `testPacketLoss()` — 5x HEAD requests to the same ping URL, reports
-    failure rate as "packet loss %".
-- `lib/security_check.dart` — `SecurityCheck.scanWiFiSecurity()`. Currently a
-  **stub**: SSID is hardcoded to `"Unknown"` rather than read from the device.
-  Comments in the file mark where to wire in `network_info_plus`
-  (`NetworkInfo().getWifiName()`). Because SSID is always `"Unknown"`, the
-  "looks public" heuristic always fires and the app always reports
-  "⚠️ Unsecured / Public".
-- `test/widget_test.dart` — **stale**: it's still the default Flutter counter
-  template (`find.text('0')`, tapping `Icons.add`) and does not test
-  `HomeScreen` or `NetworkTester`/`SecurityCheck` at all. It will fail if run,
-  since the counter UI no longer exists.
+- `lib/main.dart` — UI only (`MyApp`, `HomeScreen`). Orchestrates the other
+  lib files: runs download/upload/ping tests, calls `SecurityCheck` and
+  `DiagnosisEngine`, saves each run via `HistoryStore`, and hosts the gauge/
+  card/compare UI. The top-bar history icon pushes `HistoryScreen`.
+- `lib/network_tester.dart` — `NetworkTester`, static-method class doing real
+  HTTP-based checks, each with a CORS-friendly fallback host for Flutter Web:
+  - `testPingDetailed()` — several probes against a reachable host, returns
+    `PingStats` (sent/received/rtts, exposing loss %, min/avg/max, jitter).
+  - `testDownloadSpeed()` / `testUploadSpeed()` — real GET/POST transfers,
+    return `SpeedResult` (success, mbps, bytes, seconds, source/error).
+  - `testPublicIpInfo()` — public IP + ISP/city/country via `ipwho.is`
+    (no key, CORS-enabled); falls back to `api.ipify.org` (IP only) if
+    `ipwho.is` is unreachable or rate-limited, so a single provider outage
+    only degrades the result instead of blanking it.
+- `lib/diagnosis_engine.dart` — `DiagnosisEngine`:
+  - `labelFor(List<ConnectivityResult>)` — maps `connectivity_plus` results to
+    "Wi-Fi" / "Mobile Data" / "Ethernet" / "VPN" / "Offline". Already wired
+    in and displayed in the bottom bar of `HomeScreen`.
+  - `evaluateSingle(NetworkSnapshot)` — single-run heuristic verdict. Checks
+    `NetworkSnapshot.deviceStatus?.isLowPowerMode` first on Mobile Data runs,
+    so battery-saver throttling isn't mistaken for a carrier problem.
+  - `compare(NetworkSnapshot, NetworkSnapshot)` — Wi-Fi vs mobile run
+    comparison, assigns blame to ISP/router/mobile network; also appends a
+    Low Power Mode caveat to a "mobile network issue" verdict when
+    applicable.
+- `lib/security_check.dart` — `SecurityCheck.scanWiFiSecurity()` prefers a
+  native OS-level read (`lib/wifi_native_io.dart`, currently Windows via
+  `netsh wlan show interfaces`) since `network_info_plus` has no Windows
+  backend at all and, unlike `network_info_plus` on any platform, `netsh`
+  also reports the actual authentication type (confirms open/WEP networks
+  instead of guessing from the SSID). Falls back to `network_info_plus` +
+  `Permission.locationWhenInUse` (via `permission_handler`) otherwise, since
+  Android/iOS withhold the real SSID without location permission. If the
+  SSID can't be resolved (permission denied, not on WiFi, hidden network) it
+  reports "❓ Unable to verify" rather than defaulting to a public-network
+  warning. `lib/wifi_native_stub.dart` is the no-op non-Windows counterpart,
+  selected via a conditional import
+  (`'wifi_native_stub.dart' if (dart.library.io) 'wifi_native_io.dart'`).
+  Requires the manifest/plist permission entries below.
+- `lib/device_status.dart` — `DeviceStatus.capture()` reads local device
+  context via `battery_plus` (battery %, Low Power Mode) and
+  `device_info_plus` (device/OS label), all best-effort and null-safe on
+  unsupported platforms (`battery_plus` has no Linux/Web backend).
+  Attached to `NetworkSnapshot.deviceStatus` and consumed by
+  `DiagnosisEngine` for the Low Power Mode caveat above; also shown as a
+  context line in `HomeScreen`'s stats panel. Not a performance dashboard —
+  deliberately scoped to the one thing that changes a network verdict.
+- `lib/history_entry.dart` / `lib/history_store.dart` / `lib/history_screen.dart`
+  — diagnostic history. `HistoryEntry` is a compact JSON-serializable summary
+  of one run; `HistoryStore` persists a capped (50) list to
+  `shared_preferences` under key `diagnostic_history`; `HistoryScreen` lists
+  past runs newest-first with a clear-history action.
+- `test/widget_test.dart` — targets `HomeScreen` (not the old counter
+  template); assertions match current UI text (`PING`, `PACKET LOSS`,
+  `SECURITY`, `UPLOAD` card labels, `Mbps down`, `Not checked`, `Start Test`,
+  `Compare Wi-Fi vs Mobile`).
 - `ScanGuard/PasswordVault/180634937/` — an empty, unexplained directory
   unrelated to the Flutter app (numeric name, no file extension, dated
   2025-07-14). Not referenced by any Dart code. Leave it alone unless the user
@@ -35,21 +75,32 @@ security check. App display title is "NetDiagnose"; package/applicationId is
 
 ## Dependencies (pubspec.yaml)
 
-`http`, `connectivity_plus`, `device_info_plus`, `battery_plus`,
-`network_info_plus`, `shared_preferences` are all declared, but only `http`
-is actually used in `lib/` so far — the rest are pulled in for planned
-features (real SSID/connectivity detection, device info, battery status,
-persisted scan history) that aren't wired up yet.
+`http`, `connectivity_plus`, `network_info_plus`, `shared_preferences`,
+`permission_handler`, `device_info_plus`, and `battery_plus` are all
+actively used (the latter two via `lib/device_status.dart`).
+
+## Platform permissions
+
+- Android (`android/app/src/main/AndroidManifest.xml`): `ACCESS_WIFI_STATE`,
+  `ACCESS_NETWORK_STATE`, `ACCESS_FINE_LOCATION` — required for
+  `network_info_plus` to return a real SSID instead of null. `INTERNET` is
+  now declared here too (previously only in the debug/profile manifests,
+  which meant release builds would have silently failed every HTTP-based
+  test).
+- iOS (`ios/Runner/Info.plist`): `NSLocationWhenInUseUsageDescription` — same
+  reason; also required for the runtime permission prompt.
 
 ## Known gaps / likely next work
 
-1. `SecurityCheck` doesn't actually read the WiFi SSID — needs
-   `network_info_plus` wired in (import is commented out in the file).
-2. `test/widget_test.dart` doesn't test real app behavior — needs rewriting
-   against `HomeScreen`.
-3. No persistence of diagnostic history despite `shared_preferences` being a
-   dependency.
-4. No use yet of `connectivity_plus`, `device_info_plus`, `battery_plus`.
+1. SSID resolution (`network_info_plus` path) and the Windows `netsh` path
+   in `lib/wifi_native_io.dart` can't be manually verified on this dev
+   machine (Windows, no Android/iOS hardware attached) — confirm on actual
+   devices that the location-permission prompt appears, a real SSID (not
+   "Unknown") comes back, and `netsh` parsing holds up against real driver
+   output.
+2. `testPublicIpInfo()`'s fallback (`api.ipify.org`) only returns a bare IP,
+   no ISP/city/country — acceptable degraded behavior, not a full second
+   data source.
 
 ## Commands
 
