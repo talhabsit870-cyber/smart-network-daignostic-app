@@ -133,3 +133,8 @@ actively used (the latter two via `lib/network/device_status.dart`).
 - Test: `flutter test`
 - Analyze: `flutter analyze`
 - Get deps: `flutter pub get`
+
+## Commit conventions
+
+Subject line only — no commit body/description text, and no
+`Co-Authored-By:` trailer.
