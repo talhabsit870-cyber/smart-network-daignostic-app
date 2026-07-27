@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/cta_button.dart';
+import '../core/responsive.dart';
 import '../core/theme.dart' show AppColors, connectionIcon;
 import '../diagnosis/diagnosis_engine.dart';
 import '../network/device_status.dart';
@@ -45,42 +47,52 @@ class ResultScreen extends StatelessWidget {
         foregroundColor: AppColors.textPrimary,
         title: Text(isCompare ? 'Comparison Result' : 'Test Result'),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(_verdictIcon(diagnosis.verdict), color: color, size: 16),
-                  const SizedBox(width: 6),
-                  Text(
-                    diagnosis.title,
-                    style: TextStyle(
-                        color: color, fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  const Spacer(),
-                  Text(_formatTimestamp(timestamp),
-                      style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 11)),
-                ],
+      body: AppBackground(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: AppBody(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(_verdictIcon(diagnosis.verdict),
+                            color: color, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          diagnosis.title,
+                          style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13),
+                        ),
+                        const Spacer(),
+                        Text(_formatTimestamp(timestamp),
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 11)),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    if (isCompare) _buildCompareHero() else _buildSoloHero(),
+                    const SizedBox(height: 18),
+                    if (!isCompare) ...[
+                      _buildTileRow(),
+                      const SizedBox(height: 16),
+                    ],
+                    SignalPath(
+                        diagnosis: diagnosis, diagnosisContext: diagnosisContext),
+                    const SizedBox(height: 12),
+                    _buildDiagnosisCard(color),
+                    const SizedBox(height: 12),
+                    _buildFooter(),
+                    const SizedBox(height: 24),
+                    _buildActions(context),
+                  ],
+                ),
               ),
-              const SizedBox(height: 18),
-              if (isCompare) _buildCompareHero() else _buildSoloHero(),
-              const SizedBox(height: 18),
-              if (!isCompare) ...[
-                _buildTileRow(),
-                const SizedBox(height: 16),
-              ],
-              SignalPath(diagnosis: diagnosis, diagnosisContext: diagnosisContext),
-              const SizedBox(height: 12),
-              _buildDiagnosisCard(color),
-              const SizedBox(height: 12),
-              _buildFooter(),
-              const SizedBox(height: 24),
-              _buildActions(context),
-            ],
+            ),
           ),
         ),
       ),
@@ -90,22 +102,29 @@ class ResultScreen extends StatelessWidget {
   // ── Hero ─────────────────────────────────────────────────────────
 
   Widget _buildSoloHero() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _metricRing(
-          label: 'DOWNLOAD',
-          icon: Icons.download_rounded,
-          result: primary.download,
-          color: AppColors.violet,
-        ),
-        _metricRing(
-          label: 'UPLOAD',
-          icon: Icons.upload_rounded,
-          result: primary.upload,
-          color: AppColors.magenta,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final ringSize = (constraints.maxWidth * 0.38).clamp(120.0, 163.0);
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _metricRing(
+              label: 'DOWNLOAD',
+              icon: Icons.download_rounded,
+              result: primary.download,
+              color: AppColors.accentPrimary,
+              size: ringSize,
+            ),
+            _metricRing(
+              label: 'UPLOAD',
+              icon: Icons.upload_rounded,
+              result: primary.upload,
+              color: AppColors.accentSecondary,
+              size: ringSize,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -114,15 +133,16 @@ class ResultScreen extends StatelessWidget {
     required IconData icon,
     required SpeedResult result,
     required Color color,
+    required double size,
   }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         result.success
-            ? SpeedGauge(value: result.mbps, size: 163)
+            ? SpeedGauge(value: result.mbps, size: size)
             : SizedBox(
-                width: 163,
-                height: 163,
+                width: size,
+                height: size,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -180,7 +200,7 @@ class ResultScreen extends StatelessWidget {
           Row(
             children: [
               Icon(connectionIcon(snap.connectionLabel),
-                  color: AppColors.violetGlow, size: 16),
+                  color: AppColors.accentPrimaryGlow, size: 16),
               const SizedBox(width: 6),
               Text(snap.connectionLabel,
                   style: const TextStyle(
@@ -260,7 +280,7 @@ class ResultScreen extends StatelessWidget {
         children: [
           Column(
             children: [
-              Icon(icon, color: AppColors.violetGlow, size: 18),
+              Icon(icon, color: AppColors.accentPrimaryGlow, size: 18),
               const SizedBox(height: 8),
               Text(
                 value,
@@ -365,34 +385,18 @@ class ResultScreen extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: OutlinedButton(
+          child: SecondaryCtaButton(
+            label: 'Done',
+            height: 48,
             onPressed: () => Navigator.of(context).pop(),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.surfaceBorder),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24)),
-            ),
-            child: const Text('Done',
-                style: TextStyle(
-                    color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: ElevatedButton(
+          child: PrimaryCtaButton(
+            label: 'Test Again',
+            height: 48,
             onPressed: onRunAgain,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.violet,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24)),
-              elevation: 6,
-              shadowColor: AppColors.violetGlow,
-            ),
-            child: const Text('Test Again',
-                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
       ],

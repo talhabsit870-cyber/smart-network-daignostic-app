@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/responsive.dart';
 import '../core/theme.dart' show AppColors;
 import '../diagnosis/diagnosis_engine.dart';
 import 'history_entry.dart';
@@ -67,12 +68,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<HistoryEntry>>(
+      body: AppBackground(
+        child: FutureBuilder<List<HistoryEntry>>(
         future: _future,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(
-              child: CircularProgressIndicator(color: AppColors.violet),
+              child: CircularProgressIndicator(color: AppColors.accentPrimary),
             );
           }
           final entries = snapshot.data!;
@@ -84,7 +86,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             );
           }
-          return ListView.separated(
+          return AppBody(
+            child: ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: entries.length,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -160,8 +163,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               );
             },
+            ),
           );
         },
+        ),
       ),
     );
   }

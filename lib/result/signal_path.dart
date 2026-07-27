@@ -100,38 +100,46 @@ class SignalPath extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.surfaceBorder),
       ),
-      child: Row(
-        children: [
-          for (int i = 0; i < nodes.length; i++) ...[
-            if (i > 0) _connector(nodes[i - 1].state, nodes[i].state),
-            _node(nodes[i]),
-          ],
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final nodeWidth = (constraints.maxWidth / nodes.length).clamp(50.0, 58.0);
+          return Row(
+            children: [
+              for (int i = 0; i < nodes.length; i++) ...[
+                if (i > 0) _connector(nodes[i - 1].state, nodes[i].state),
+                _node(nodes[i], nodeWidth),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _node(ChainNode node) {
+  Widget _node(ChainNode node, double nodeWidth) {
     final color = _stateColor(node.state);
+    final badgeSize = 38.0 * (nodeWidth / 58.0);
     return SizedBox(
-      width: 58,
+      width: nodeWidth,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 38,
-            height: 38,
+            width: badgeSize,
+            height: badgeSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: color.withValues(alpha: 0.15),
               border: Border.all(color: color, width: 2),
             ),
-            child: Icon(node.icon, color: color, size: 17),
+            child: Icon(node.icon, color: color, size: 17 * (nodeWidth / 58.0)),
           ),
           const SizedBox(height: 6),
           Text(
             node.label,
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: color,
               fontSize: 9,

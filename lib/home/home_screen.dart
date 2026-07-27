@@ -2,6 +2,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
+import '../core/cta_button.dart';
+import '../core/responsive.dart';
 import '../core/theme.dart';
 import '../diagnosis/diagnosis_engine.dart';
 import '../history/history_entry.dart';
@@ -200,7 +202,8 @@ class _HomeScreenState extends State<HomeScreen>
               child: const Text('Trust this network'),
             ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.violet),
+            style:
+                FilledButton.styleFrom(backgroundColor: AppColors.accentPrimary),
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Dismiss'),
           ),
@@ -235,7 +238,8 @@ class _HomeScreenState extends State<HomeScreen>
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.violet),
+            style:
+                FilledButton.styleFrom(backgroundColor: AppColors.accentPrimary),
             onPressed: () {
               Navigator.of(ctx).pop();
               _finishCompare(baseline);
@@ -277,14 +281,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.bgTop, AppColors.bgBottom],
-          ),
-        ),
+      body: AppBackground(
         child: SafeArea(
           // ConstrainedBox + SingleChildScrollView instead of Spacer: fills
           // the screen with spaceBetween on viewports tall enough for the
@@ -295,40 +292,51 @@ class _HomeScreenState extends State<HomeScreen>
               return SingleChildScrollView(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildTopBar(),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildConnectionBadge(),
-                            const SizedBox(height: 24),
-                            _buildGauge(),
-                            const SizedBox(height: 12),
-                            Text(
-                              _phaseLabel,
-                              style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 13,
-                                letterSpacing: 1,
+                  child: AppBody(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildTopBar(),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildConnectionBadge(),
+                              const SizedBox(height: 24),
+                              _buildGauge(),
+                              const SizedBox(height: 12),
+                              Text(
+                                _phaseLabel,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                  letterSpacing: 1,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildWave(),
-                            const SizedBox(height: 24),
-                            _buildScanButton(),
-                            const SizedBox(height: 12),
-                            _buildCompareButton(),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildWave(),
+                              const SizedBox(height: 24),
+                              PrimaryCtaButton(
+                                label: _isDiagnosing ? "Testing..." : "Start Test",
+                                onPressed: busy ? null : _startDiagnosis,
+                              ),
+                              const SizedBox(height: 12),
+                              SecondaryCtaButton(
+                                icon: Icons.compare_arrows,
+                                label: _isComparing
+                                    ? "Comparing..."
+                                    : "Compare Wi-Fi vs Mobile",
+                                onPressed: busy ? null : _startCompare,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -346,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen>
       children: [
         Row(
           children: const [
-            Icon(Icons.blur_on, color: AppColors.violetGlow, size: 22),
+            Icon(Icons.blur_on, color: AppColors.accentPrimaryGlow, size: 22),
             SizedBox(width: 8),
             Text(
               "NetDiagnose",
@@ -359,11 +367,18 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ],
         ),
-        IconButton(
-          icon: const Icon(Icons.history, color: AppColors.textMuted, size: 20),
-          tooltip: 'Scan history',
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const HistoryScreen()),
+        Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.history,
+                color: AppColors.accentPrimaryGlow, size: 20),
+            tooltip: 'Scan history',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HistoryScreen()),
+            ),
           ),
         ),
       ],
@@ -382,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(connectionIcon(_connectionLabel),
-              color: AppColors.violetGlow, size: 16),
+              color: AppColors.accentPrimaryGlow, size: 16),
           const SizedBox(width: 8),
           Text(_connectionLabel,
               style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
@@ -392,12 +407,18 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildGauge() {
-    return AnimatedBuilder(
-      animation: _needleController,
-      builder: (context, child) {
-        final animatedValue =
-            _speedValue * Curves.easeOutCubic.transform(_needleController.value);
-        return SpeedGauge(value: animatedValue, size: 275, unitLabel: 'Mbps down');
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gaugeSize = (constraints.maxWidth * 0.72).clamp(200.0, 275.0);
+        return AnimatedBuilder(
+          animation: _needleController,
+          builder: (context, child) {
+            final animatedValue = _speedValue *
+                Curves.easeOutCubic.transform(_needleController.value);
+            return SpeedGauge(
+                value: animatedValue, size: gaugeSize, unitLabel: 'Mbps down');
+          },
+        );
       },
     );
   }
@@ -416,52 +437,6 @@ class _HomeScreenState extends State<HomeScreen>
             size: const Size(double.infinity, 40),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildScanButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 54,
-      child: ElevatedButton(
-        onPressed: busy ? null : _startDiagnosis,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.violet,
-          disabledBackgroundColor: AppColors.surfaceBorder,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(27),
-          ),
-          elevation: 8,
-          shadowColor: AppColors.violetGlow,
-        ),
-        child: Text(
-          _isDiagnosing ? "Testing..." : "Start Test",
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCompareButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: OutlinedButton.icon(
-        onPressed: busy ? null : _startCompare,
-        icon: const Icon(Icons.compare_arrows, color: AppColors.violetGlow),
-        label: Text(
-          _isComparing ? "Comparing..." : "Compare Wi-Fi vs Mobile",
-          style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
-        ),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: AppColors.surfaceBorder),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
       ),
     );
   }

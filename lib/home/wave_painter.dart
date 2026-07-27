@@ -15,7 +15,7 @@ class WavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.violet.withValues(alpha: 0.7)
+      ..color = AppColors.accentPrimary.withValues(alpha: 0.7)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;

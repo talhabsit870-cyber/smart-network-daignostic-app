@@ -54,7 +54,7 @@ class SpeedGauge extends StatelessWidget {
                       height: size * 0.035,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: AppColors.violetGlow,
+                        color: AppColors.accentPrimaryGlow,
                       ),
                     ),
                     SizedBox(width: size * 0.03),
@@ -120,7 +120,11 @@ class _SpeedGaugePainter extends CustomPainter {
         ..shader = const SweepGradient(
           startAngle: _startAngle,
           endAngle: _startAngle + _sweepAngle,
-          colors: [AppColors.violet, AppColors.violetGlow, AppColors.magenta],
+          colors: [
+            AppColors.accentPrimary,
+            AppColors.accentPrimaryGlow,
+            AppColors.accentSecondary,
+          ],
         ).createShader(Rect.fromCircle(center: center, radius: radius))
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
@@ -148,13 +152,26 @@ class _SpeedGaugePainter extends CustomPainter {
       );
     }
 
-    final labelRadius = tickOuterR + shortest * 0.05;
+    // Each label's own radius is derived from its measured size (not a
+    // shared constant), so a wide label like "100" naturally sits further
+    // out than "0"/"1" instead of both being anchored at the same distance
+    // and clipping the canvas edge. The two endpoint labels ("0"/"100")
+    // additionally get a small tangential nudge away from the gauge's
+    // bottom gap (90°, straight down) so they hug the ring's end-caps
+    // instead of drifting toward each other/the open gap.
+    //
+    // The tick *values* are deliberately non-linear (dense at the low end),
+    // but the angle mapping is linear in value, so low ticks (0, 1, 5, 10)
+    // land within the first ~10% of the sweep and their text labels would
+    // overlap each other — especially at small gauge sizes — even though
+    // each tick mark itself has a distinct angle. Labels are therefore
+    // drawn greedily left-to-right and a label is skipped (its tick mark
+    // still gets drawn above) whenever it would land closer to the last
+    // *drawn* label than the sum of their angular half-widths.
+    double? lastDrawnAngle;
+    double lastDrawnHalfAngularWidth = 0;
     for (final tick in _ticks) {
       final angle = _angleFor(tick.toDouble());
-      final pos = Offset(
-        center.dx + labelRadius * math.cos(angle),
-        center.dy + labelRadius * math.sin(angle),
-      );
       final tp = TextPainter(
         text: TextSpan(
           text: '$tick',
@@ -166,7 +183,30 @@ class _SpeedGaugePainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
+      final halfDiag = math.sqrt(tp.width * tp.width + tp.height * tp.height) / 2;
+      final labelRadius = tickOuterR + shortest * 0.035 + halfDiag;
+      final halfAngularWidth = (tp.width / 2 + shortest * 0.02) / labelRadius;
+      if (lastDrawnAngle != null &&
+          angle - lastDrawnAngle < lastDrawnHalfAngularWidth + halfAngularWidth) {
+        continue;
+      }
+      var pos = Offset(
+        center.dx + labelRadius * math.cos(angle),
+        center.dy + labelRadius * math.sin(angle),
+      );
+      if (tick == 0 || tick == 100) {
+        final tangent = Offset(-math.sin(angle), math.cos(angle));
+        final sign = tick == 0 ? -1.0 : 1.0;
+        pos += tangent * (shortest * 0.02) * sign;
+      }
+      var paintOffset = pos - Offset(tp.width / 2, tp.height / 2);
+      paintOffset = Offset(
+        paintOffset.dx.clamp(0.0, size.width - tp.width),
+        paintOffset.dy.clamp(0.0, size.height - tp.height),
+      );
+      tp.paint(canvas, paintOffset);
+      lastDrawnAngle = angle;
+      lastDrawnHalfAngularWidth = halfAngularWidth;
     }
 
     final needleAngle = _angleFor(value);
@@ -182,7 +222,7 @@ class _SpeedGaugePainter extends CustomPainter {
     canvas.drawLine(center, needleEnd, needlePaint);
     canvas.drawCircle(center, shortest * 0.026, Paint()..color = Colors.white);
     canvas.drawCircle(
-        center, shortest * 0.014, Paint()..color = AppColors.violet);
+        center, shortest * 0.014, Paint()..color = AppColors.accentPrimary);
   }
 
   @override
