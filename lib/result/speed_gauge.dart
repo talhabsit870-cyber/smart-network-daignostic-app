@@ -25,54 +25,51 @@ class SpeedGauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _SpeedGaugePainter(value: value, maxValue: maxValue),
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.only(top: size * 0.06),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value.toStringAsFixed(1),
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: size * 0.19,
-                    fontWeight: FontWeight.bold,
-                    height: 1,
-                  ),
-                ),
-                SizedBox(height: size * 0.03),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: size * 0.035,
-                      height: size * 0.035,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.accentPrimaryGlow,
-                      ),
-                    ),
-                    SizedBox(width: size * 0.03),
-                    Text(
-                      unitLabel,
-                      style: TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: size * 0.075,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: size,
+          height: size,
+          child: CustomPaint(
+            painter: _SpeedGaugePainter(value: value, maxValue: maxValue),
           ),
         ),
-      ),
+        SizedBox(height: size * 0.05),
+        Text(
+          value.toStringAsFixed(1),
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: size * 0.19,
+            fontWeight: FontWeight.bold,
+            height: 1,
+          ),
+        ),
+        SizedBox(height: size * 0.03),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: size * 0.035,
+              height: size * 0.035,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.accentPrimaryGlow,
+              ),
+            ),
+            SizedBox(width: size * 0.03),
+            Text(
+              unitLabel,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: size * 0.075,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
