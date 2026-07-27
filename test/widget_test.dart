@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:smart_network_diagnostic/main.dart';
+import 'package:smart_network_diagnostic/app.dart';
 
 void main() {
   testWidgets('HomeScreen shows the idle launcher and controls',
