@@ -1,5 +1,5 @@
-import 'diagnosis_engine.dart';
-import 'network_tester.dart';
+import '../diagnosis/diagnosis_engine.dart';
+import '../network/network_tester.dart';
 
 /// A compact, serializable summary of one diagnosis run — enough to show
 /// in a history list without persisting full snapshot/ping detail.

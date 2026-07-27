@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'diagnosis_engine.dart';
+import '../core/theme.dart' show AppColors;
+import '../diagnosis/diagnosis_engine.dart';
 import 'history_entry.dart';
 import 'history_store.dart';
-import 'main.dart' show AppColors;
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
