@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'main.dart' show AppColors;
+import '../core/theme.dart' show AppColors;
 
 /// A compact needle gauge in the classic speed-test style: a gradient arc,
 /// non-linear tick marks (dense at the low end, sparse at the high end,

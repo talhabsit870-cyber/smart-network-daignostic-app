@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'diagnosis_engine.dart';
-import 'main.dart' show AppColors;
+import '../core/theme.dart' show AppColors;
+import '../diagnosis/diagnosis_engine.dart';
 
 /// Health of one hop in the Signal Path — mirrors [DiagnosisVerdict] but as
 /// a per-node state rather than a single overall verdict.

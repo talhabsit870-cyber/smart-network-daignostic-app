@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'device_status.dart';
-import 'diagnosis_engine.dart';
-import 'main.dart' show AppColors, connectionIcon;
-import 'network_tester.dart';
+import '../core/theme.dart' show AppColors, connectionIcon;
+import '../diagnosis/diagnosis_engine.dart';
+import '../network/device_status.dart';
+import '../network/network_tester.dart';
 import 'signal_path.dart';
 import 'speed_gauge.dart';
 
