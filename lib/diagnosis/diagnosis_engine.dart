@@ -1,7 +1,7 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'device_status.dart';
-import 'network_tester.dart';
+import '../network/device_status.dart';
+import '../network/network_tester.dart';
 
 enum DiagnosisVerdict {
   allGood,
