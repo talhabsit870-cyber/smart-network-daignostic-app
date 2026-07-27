@@ -104,7 +104,7 @@ class ResultScreen extends StatelessWidget {
   Widget _buildSoloHero() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final ringSize = (constraints.maxWidth * 0.38).clamp(120.0, 163.0);
+        final ringSize = (constraints.maxWidth * 0.44).clamp(140.0, 200.0);
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
