@@ -87,6 +87,8 @@ class _SpeedGaugePainter extends CustomPainter {
   double _angleFor(double v) =>
       _startAngle + _sweepAngle * (v / maxValue).clamp(0.0, 1.0);
 
+  static const _majorTicks = {0, 50, 100};
+
   @override
   void paint(Canvas canvas, Size size) {
     final shortest = math.min(size.width, size.height);
@@ -96,6 +98,22 @@ class _SpeedGaugePainter extends CustomPainter {
     // the down-left/down-right diagonal where both x and y offsets stack.
     final radius = shortest / 2 - shortest * 0.22;
     final strokeWidth = shortest * 0.065;
+
+    // A soft glow behind the ring — a faint radial wash, not a hard shadow —
+    // gives the dial some depth without the heavy drop-shadow look the user
+    // asked to move away from on the CTA buttons.
+    final glowRadius = radius + strokeWidth * 2.2;
+    canvas.drawCircle(
+      center,
+      glowRadius,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            AppColors.accentPrimaryGlow.withValues(alpha: 0.16),
+            AppColors.accentPrimaryGlow.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromCircle(center: center, radius: glowRadius)),
+    );
 
     canvas.drawCircle(
       center,
@@ -132,20 +150,25 @@ class _SpeedGaugePainter extends CustomPainter {
 
     // Tick marks — a short radial dash at each tick's exact angle, so every
     // number has a precise anchor point on the ring instead of floating.
-    final tickPaint = Paint()
-      ..color = AppColors.textMuted
-      ..strokeWidth = shortest * 0.008
-      ..strokeCap = StrokeCap.round;
+    // The 0/50/100 reference ticks get a longer, brighter dash than the
+    // in-between ticks so the dial reads with a clear major/minor hierarchy
+    // instead of nine identical marks.
     final tickInnerR = radius + strokeWidth * 0.5 + shortest * 0.015;
     final tickOuterR = tickInnerR + shortest * 0.035;
+    final tickOuterRMajor = tickInnerR + shortest * 0.05;
     for (final tick in _ticks) {
+      final isMajor = _majorTicks.contains(tick);
       final angle = _angleFor(tick.toDouble());
+      final outerR = isMajor ? tickOuterRMajor : tickOuterR;
       canvas.drawLine(
         Offset(center.dx + tickInnerR * math.cos(angle),
             center.dy + tickInnerR * math.sin(angle)),
-        Offset(center.dx + tickOuterR * math.cos(angle),
-            center.dy + tickOuterR * math.sin(angle)),
-        tickPaint,
+        Offset(center.dx + outerR * math.cos(angle),
+            center.dy + outerR * math.sin(angle)),
+        Paint()
+          ..color = isMajor ? AppColors.textPrimary.withValues(alpha: 0.55) : AppColors.textMuted
+          ..strokeWidth = shortest * (isMajor ? 0.012 : 0.008)
+          ..strokeCap = StrokeCap.round,
       );
     }
 
@@ -168,20 +191,22 @@ class _SpeedGaugePainter extends CustomPainter {
     double? lastDrawnAngle;
     double lastDrawnHalfAngularWidth = 0;
     for (final tick in _ticks) {
+      final isMajor = _majorTicks.contains(tick);
       final angle = _angleFor(tick.toDouble());
       final tp = TextPainter(
         text: TextSpan(
           text: '$tick',
           style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: shortest * 0.045,
-            fontWeight: FontWeight.w500,
+            color: isMajor ? AppColors.textPrimary : AppColors.textMuted,
+            fontSize: shortest * (isMajor ? 0.05 : 0.045),
+            fontWeight: isMajor ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
       final halfDiag = math.sqrt(tp.width * tp.width + tp.height * tp.height) / 2;
-      final labelRadius = tickOuterR + shortest * 0.035 + halfDiag;
+      final labelRadius =
+          (isMajor ? tickOuterRMajor : tickOuterR) + shortest * 0.035 + halfDiag;
       final halfAngularWidth = (tp.width / 2 + shortest * 0.02) / labelRadius;
       if (lastDrawnAngle != null &&
           angle - lastDrawnAngle < lastDrawnHalfAngularWidth + halfAngularWidth) {
