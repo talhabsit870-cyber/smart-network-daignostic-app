@@ -83,11 +83,33 @@ class _SpeedGaugePainter extends CustomPainter {
   static const _ticks = [0, 1, 5, 10, 20, 30, 50, 75, 100];
   static const _startAngle = math.pi * 0.75; // 135°
   static const _sweepAngle = math.pi * 1.5; // 270°
-
-  double _angleFor(double v) =>
-      _startAngle + _sweepAngle * (v / maxValue).clamp(0.0, 1.0);
-
   static const _majorTicks = {0, 50, 100};
+
+  // Tick marks are placed at even angular steps around the sweep — a
+  // consistent, evenly-spaced ring of marks — rather than at an angle
+  // proportional to their (deliberately non-linear) value. The needle/fill
+  // angle for an arbitrary value is then found by locating which tick
+  // bracket the value falls in and interpolating linearly between that
+  // bracket's two (evenly-spaced) tick angles, so the needle still lands
+  // proportionally between its neighboring ticks — just like a real analog
+  // meter with a non-uniform scale but uniform mark spacing.
+  double _angleForTickIndex(int i) =>
+      _startAngle + _sweepAngle * i / (_ticks.length - 1);
+
+  double _angleFor(double v) {
+    final scaledTicks = _ticks.map((t) => t * maxValue / 100).toList();
+    final clamped = v.clamp(0.0, scaledTicks.last);
+    for (var i = 0; i < scaledTicks.length - 1; i++) {
+      final t0 = scaledTicks[i];
+      final t1 = scaledTicks[i + 1];
+      if (clamped <= t1 || i == scaledTicks.length - 2) {
+        final frac = t1 > t0 ? ((clamped - t0) / (t1 - t0)).clamp(0.0, 1.0) : 0.0;
+        return _angleForTickIndex(i) +
+            frac * (_angleForTickIndex(i + 1) - _angleForTickIndex(i));
+      }
+    }
+    return _angleForTickIndex(scaledTicks.length - 1);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -129,8 +151,11 @@ class _SpeedGaugePainter extends CustomPainter {
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
         _startAngle, _sweepAngle, false, trackPaint);
 
-    final progress = (value / maxValue).clamp(0.0, 1.0);
-    if (progress > 0) {
+    // The filled sweep ends at the same (non-linearly interpolated) angle as
+    // the needle, so the arc's leading edge and the needle always agree on
+    // where the value sits relative to the evenly-spaced ticks.
+    final valueAngle = _angleFor(value);
+    if (valueAngle > _startAngle) {
       final progressPaint = Paint()
         ..shader = const SweepGradient(
           startAngle: _startAngle,
@@ -145,7 +170,7 @@ class _SpeedGaugePainter extends CustomPainter {
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round;
       canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
-          _startAngle, _sweepAngle * progress, false, progressPaint);
+          _startAngle, valueAngle - _startAngle, false, progressPaint);
     }
 
     // Tick marks — a short radial dash at each tick's exact angle, so every
@@ -156,9 +181,10 @@ class _SpeedGaugePainter extends CustomPainter {
     final tickInnerR = radius + strokeWidth * 0.5 + shortest * 0.015;
     final tickOuterR = tickInnerR + shortest * 0.035;
     final tickOuterRMajor = tickInnerR + shortest * 0.05;
-    for (final tick in _ticks) {
+    for (var i = 0; i < _ticks.length; i++) {
+      final tick = _ticks[i];
       final isMajor = _majorTicks.contains(tick);
-      final angle = _angleFor(tick.toDouble());
+      final angle = _angleForTickIndex(i);
       final outerR = isMajor ? tickOuterRMajor : tickOuterR;
       canvas.drawLine(
         Offset(center.dx + tickInnerR * math.cos(angle),
@@ -180,19 +206,19 @@ class _SpeedGaugePainter extends CustomPainter {
     // bottom gap (90°, straight down) so they hug the ring's end-caps
     // instead of drifting toward each other/the open gap.
     //
-    // The tick *values* are deliberately non-linear (dense at the low end),
-    // but the angle mapping is linear in value, so low ticks (0, 1, 5, 10)
-    // land within the first ~10% of the sweep and their text labels would
-    // overlap each other — especially at small gauge sizes — even though
-    // each tick mark itself has a distinct angle. Labels are therefore
-    // drawn greedily left-to-right and a label is skipped (its tick mark
-    // still gets drawn above) whenever it would land closer to the last
-    // *drawn* label than the sum of their angular half-widths.
+    // Tick marks sit at even angular steps (see `_angleForTickIndex`) so
+    // consecutive labels are always the same distance apart regardless of
+    // the (deliberately non-linear) values they carry. The collision-skip
+    // below is a safety net for very small gauge sizes where a wide label
+    // like "100" could still nudge into its neighbor; a label is skipped
+    // (its tick mark still gets drawn above) whenever it would land closer
+    // to the last *drawn* label than the sum of their angular half-widths.
     double? lastDrawnAngle;
     double lastDrawnHalfAngularWidth = 0;
-    for (final tick in _ticks) {
+    for (var i = 0; i < _ticks.length; i++) {
+      final tick = _ticks[i];
       final isMajor = _majorTicks.contains(tick);
-      final angle = _angleFor(tick.toDouble());
+      final angle = _angleForTickIndex(i);
       final tp = TextPainter(
         text: TextSpan(
           text: '$tick',
@@ -232,7 +258,9 @@ class _SpeedGaugePainter extends CustomPainter {
     }
 
     final needleAngle = _angleFor(value);
-    final needleLength = radius - strokeWidth * 0.6;
+    // Stop short of the arc's inner edge (radius - strokeWidth/2) with a
+    // visible gap, so the needle tip never touches or overlaps the ring.
+    final needleLength = radius - strokeWidth / 2 - shortest * 0.03;
     final needleEnd = Offset(
       center.dx + needleLength * math.cos(needleAngle),
       center.dy + needleLength * math.sin(needleAngle),
