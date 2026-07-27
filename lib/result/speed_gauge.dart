@@ -258,16 +258,21 @@ class _SpeedGaugePainter extends CustomPainter {
     }
 
     final needleAngle = _angleFor(value);
-    // Stop short of the arc's inner edge (radius - strokeWidth/2) with a
-    // visible gap, so the needle tip never touches or overlaps the ring.
-    final needleLength = radius - strokeWidth / 2 - shortest * 0.03;
+    final needleStrokeWidth = shortest * 0.014;
+    // Stop well short of the arc's inner edge (radius - strokeWidth/2): the
+    // needle's own round stroke cap otherwise adds a further half-stroke-width
+    // bump past the line's nominal endpoint, which was enough to visually
+    // touch the ring even with a small gap. Subtracting that cap radius too
+    // guarantees real clearance, not just a clearance on paper.
+    final needleLength =
+        radius - strokeWidth / 2 - needleStrokeWidth / 2 - shortest * 0.05;
     final needleEnd = Offset(
       center.dx + needleLength * math.cos(needleAngle),
       center.dy + needleLength * math.sin(needleAngle),
     );
     final needlePaint = Paint()
       ..color = Colors.white
-      ..strokeWidth = shortest * 0.014
+      ..strokeWidth = needleStrokeWidth
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(center, needleEnd, needlePaint);
     canvas.drawCircle(center, shortest * 0.026, Paint()..color = Colors.white);
