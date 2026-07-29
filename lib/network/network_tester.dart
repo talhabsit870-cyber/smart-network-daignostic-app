@@ -64,6 +64,33 @@ class SpeedResult {
       SpeedResult(success: false, error: error);
 }
 
+/// Result of a bufferbloat check: how much round-trip latency increases
+/// while the link is saturated with download traffic, compared to its idle
+/// baseline. Fast throughput and healthy latency-under-load are independent
+/// properties — this is what a plain speed test misses and what actually
+/// explains a video call or game stuttering even though a download test
+/// looks fine.
+class BufferbloatResult {
+  final bool success;
+  final double? idleMs;
+  final double? loadedMs;
+  final double? increaseMs;
+  final String grade;
+  final String? error;
+
+  const BufferbloatResult({
+    required this.success,
+    this.idleMs,
+    this.loadedMs,
+    this.increaseMs,
+    this.grade = '--',
+    this.error,
+  });
+
+  factory BufferbloatResult.failed(String error) =>
+      BufferbloatResult(success: false, error: error);
+}
+
 /// Result of a public IP / ISP lookup.
 class IpInfoResult {
   final bool success;
@@ -345,6 +372,110 @@ class NetworkTester {
       seconds: seconds,
       source: _uploadHost.host,
     );
+  }
+
+  /// Measures how much round-trip latency increases while the link is
+  /// saturated with concurrent download traffic, graded like Waveform's
+  /// bufferbloat test (A+ down to F). Reuses [idlePing] — already measured
+  /// moments earlier by the normal ping phase on an otherwise-idle link —
+  /// as the baseline instead of re-measuring it, so idle and loaded latency
+  /// come from the same host and probe method.
+  static Future<BufferbloatResult> testBufferbloat({
+    required PingStats idlePing,
+    Duration loadDuration = const Duration(seconds: 5),
+    int saturationStreams = 3,
+  }) async {
+    final idleMs = idlePing.avgMs;
+    if (idleMs == null) {
+      return BufferbloatResult.failed('No idle latency baseline available');
+    }
+
+    final saturationClients =
+        List.generate(saturationStreams, (_) => http.Client());
+    final pingClient = http.Client();
+    final stopwatch = Stopwatch()..start();
+    final loadedRtts = <int>[];
+
+    Future<void> saturate(http.Client client) async {
+      while (stopwatch.elapsed < loadDuration) {
+        http.StreamedResponse response;
+        try {
+          response = await client
+              .send(http.Request('GET', _downloadHosts.first))
+              .timeout(const Duration(seconds: 10));
+        } catch (_) {
+          return;
+        }
+        if (response.statusCode < 200 || response.statusCode >= 300) return;
+        try {
+          await for (final _ in response.stream) {
+            if (stopwatch.elapsed >= loadDuration) return;
+          }
+        } catch (_) {
+          return;
+        }
+      }
+    }
+
+    Future<void> pingUnderLoad() async {
+      while (stopwatch.elapsed < loadDuration) {
+        final probe = Stopwatch()..start();
+        try {
+          await pingClient
+              .get(_primaryPingHost)
+              .timeout(const Duration(seconds: 3));
+          probe.stop();
+          loadedRtts.add(probe.elapsedMilliseconds);
+        } catch (_) {
+          probe.stop();
+        }
+      }
+    }
+
+    try {
+      await Future.wait([
+        ...saturationClients.map(saturate),
+        pingUnderLoad(),
+      ]);
+    } finally {
+      for (final client in saturationClients) {
+        client.close();
+      }
+      pingClient.close();
+    }
+
+    if (loadedRtts.isEmpty) {
+      return BufferbloatResult.failed('Could not measure latency under load');
+    }
+
+    // Median, not mean: the ping probes above share an isolate with the
+    // saturation downloads, so event-loop queuing produces occasional
+    // outliers that would skew an average.
+    final loadedMs = _median(loadedRtts);
+    final increaseMs = loadedMs - idleMs;
+    return BufferbloatResult(
+      success: true,
+      idleMs: idleMs,
+      loadedMs: loadedMs,
+      increaseMs: increaseMs,
+      grade: _bufferbloatGrade(increaseMs),
+    );
+  }
+
+  static double _median(List<int> values) {
+    final sorted = [...values]..sort();
+    final mid = sorted.length ~/ 2;
+    if (sorted.length.isOdd) return sorted[mid].toDouble();
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  static String _bufferbloatGrade(double increaseMs) {
+    if (increaseMs < 5) return 'A+';
+    if (increaseMs < 30) return 'A';
+    if (increaseMs < 60) return 'B';
+    if (increaseMs < 200) return 'C';
+    if (increaseMs < 400) return 'D';
+    return 'F';
   }
 
   /// Looks up the device's public-facing IP address and the ISP/organization
