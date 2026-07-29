@@ -85,37 +85,24 @@ class _SpeedGaugePainter extends CustomPainter {
   static const _sweepAngle = math.pi * 1.5; // 270°
   static const _majorTicks = {0, 50, 100};
 
-  // Tick marks are placed at even angular steps around the sweep — a
-  // consistent, evenly-spaced ring of marks — rather than at an angle
-  // proportional to their (deliberately non-linear) value. The needle/fill
-  // angle for an arbitrary value is then found by locating which tick
-  // bracket the value falls in and interpolating linearly between that
-  // bracket's two (evenly-spaced) tick angles, so the needle still lands
-  // proportionally between its neighboring ticks — just like a real analog
-  // meter with a non-uniform scale but uniform mark spacing.
-  // Ticks are stored as percentages of [maxValue] (so a fixed 0/1/5/10/…/100
-  // spread can be reused for every scale). The dial must label each mark
-  // with its actual scaled value, not that raw percentage, or a gauge with
-  // maxValue != 100 (e.g. the upload dial) prints the wrong numbers.
+  // Both the tick marks and the needle/fill derive their angle from the
+  // same linear percent-of-[maxValue] mapping, so a tick and the needle
+  // always agree on where a given value sits. Ticks are stored as
+  // percentages of [maxValue] (so a fixed 0/1/5/10/…/100 spread can be
+  // reused for every scale) — their non-uniform spacing (dense at the low
+  // end, sparse at the high end) falls out naturally from the angle being
+  // proportional to value, not from any special-cased tick layout. The
+  // dial must label each mark with its actual scaled value, not that raw
+  // percentage, or a gauge with maxValue != 100 (e.g. the upload dial)
+  // prints the wrong numbers.
   static String _tickLabel(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
-  double _angleForTickIndex(int i) =>
-      _startAngle + _sweepAngle * i / (_ticks.length - 1);
+  double _angleForPercent(double pct) => _startAngle + _sweepAngle * pct / 100;
 
   double _angleFor(double v) {
-    final scaledTicks = _ticks.map((t) => t * maxValue / 100).toList();
-    final clamped = v.clamp(0.0, scaledTicks.last);
-    for (var i = 0; i < scaledTicks.length - 1; i++) {
-      final t0 = scaledTicks[i];
-      final t1 = scaledTicks[i + 1];
-      if (clamped <= t1 || i == scaledTicks.length - 2) {
-        final frac = t1 > t0 ? ((clamped - t0) / (t1 - t0)).clamp(0.0, 1.0) : 0.0;
-        return _angleForTickIndex(i) +
-            frac * (_angleForTickIndex(i + 1) - _angleForTickIndex(i));
-      }
-    }
-    return _angleForTickIndex(scaledTicks.length - 1);
+    final pct = (v.clamp(0.0, maxValue) / maxValue) * 100;
+    return _angleForPercent(pct);
   }
 
   @override
@@ -191,7 +178,7 @@ class _SpeedGaugePainter extends CustomPainter {
     for (var i = 0; i < _ticks.length; i++) {
       final tick = _ticks[i];
       final isMajor = _majorTicks.contains(tick);
-      final angle = _angleForTickIndex(i);
+      final angle = _angleForPercent(tick.toDouble());
       final outerR = isMajor ? tickOuterRMajor : tickOuterR;
       canvas.drawLine(
         Offset(center.dx + tickInnerR * math.cos(angle),
@@ -213,9 +200,9 @@ class _SpeedGaugePainter extends CustomPainter {
     // bottom gap (90°, straight down) so they hug the ring's end-caps
     // instead of drifting toward each other/the open gap.
     //
-    // Tick marks sit at even angular steps (see `_angleForTickIndex`) so
-    // consecutive labels are always the same distance apart regardless of
-    // the (deliberately non-linear) values they carry. The collision-skip
+    // Tick marks sit at an angle proportional to their value (see
+    // `_angleForPercent`), so consecutive labels are closer together near
+    // the low end and further apart near the high end. The collision-skip
     // below is a safety net for very small gauge sizes where a wide label
     // like "100" could still nudge into its neighbor; a label is skipped
     // (its tick mark still gets drawn above) whenever it would land closer
@@ -225,7 +212,7 @@ class _SpeedGaugePainter extends CustomPainter {
     for (var i = 0; i < _ticks.length; i++) {
       final tick = _ticks[i];
       final isMajor = _majorTicks.contains(tick);
-      final angle = _angleForTickIndex(i);
+      final angle = _angleForPercent(tick.toDouble());
       final tp = TextPainter(
         text: TextSpan(
           text: _tickLabel(tick * maxValue / 100),
