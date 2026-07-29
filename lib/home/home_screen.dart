@@ -11,14 +11,14 @@ import '../history/history_screen.dart';
 import '../history/history_store.dart';
 import '../network/device_status.dart';
 import '../network/network_tester.dart';
-import '../result/result_screen.dart';
+import '../result/report_card.dart';
 import '../result/speed_gauge.dart';
 import '../security/security_check.dart';
 import 'wave_painter.dart';
 
-/// The launcher screen: idle dial, connection badge, Start/Compare — the
-/// live test ritual happens here, but the full report lives on its own
-/// page ([ResultScreen]) so this screen never grows past "ready to test".
+/// The launcher screen: idle dial, connection badge, Start/Compare, and —
+/// once a run finishes — the full report ([ReportCard]) inline below,
+/// expandable in place instead of pushed to its own page.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -30,17 +30,32 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   bool _isDiagnosing = false;
   bool _isComparing = false;
-  double _speedValue = 0; // Mbps, drives the needle
+  double _speedValue = 0; // Mbps, drives the download needle
+  double _uploadValue = 0; // Mbps, drives the upload needle
   String _phaseLabel = "Ready to test";
   String _connectionLabel = "--";
 
+  NetworkSnapshot? _primarySnapshot;
+  NetworkSnapshot? _secondarySnapshot;
+  Map<String, dynamic>? _security;
+  IpInfoResult? _ipInfo;
+  DiagnosisResult? _diagnosis;
+  DateTime? _resultTimestamp;
+  String _diagnosisContext = '';
+  bool _reportExpanded = false;
+
   late final AnimationController _needleController;
+  late final AnimationController _uploadNeedleController;
   late final AnimationController _waveController;
 
   @override
   void initState() {
     super.initState();
     _needleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _uploadNeedleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
@@ -54,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _needleController.dispose();
+    _uploadNeedleController.dispose();
     _waveController.dispose();
     super.dispose();
   }
@@ -84,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() {
       _isDiagnosing = true;
       _speedValue = 0;
+      _uploadValue = 0;
       _phaseLabel = "Testing download…";
     });
 
@@ -97,7 +114,13 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     final upload = await NetworkTester.testUploadSpeed();
-    if (mounted) setState(() => _phaseLabel = "Testing latency…");
+    if (mounted) {
+      _uploadNeedleController.forward(from: 0);
+      setState(() {
+        _uploadValue = upload.success ? upload.mbps.clamp(0, 40) : 0;
+        _phaseLabel = "Testing latency…";
+      });
+    }
 
     final ping = await NetworkTester.testPingDetailed();
     if (mounted) setState(() => _phaseLabel = "Checking security & diagnosing…");
@@ -132,24 +155,17 @@ class _HomeScreenState extends State<HomeScreen>
       _connectionLabel = connectionLabel;
       _isDiagnosing = false;
       _phaseLabel = "Ready to test";
+      _primarySnapshot = snapshot;
+      _secondarySnapshot = null;
+      _security = security;
+      _ipInfo = ipInfo;
+      _diagnosis = diagnosis;
+      _resultTimestamp = DateTime.now();
+      _diagnosisContext = connectionLabel;
+      _reportExpanded = true;
     });
 
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ResultScreen(
-        timestamp: DateTime.now(),
-        diagnosisContext: connectionLabel,
-        primary: snapshot,
-        security: security,
-        ipInfo: ipInfo,
-        diagnosis: diagnosis,
-        onRunAgain: () {
-          Navigator.of(context).pop();
-          _startDiagnosis();
-        },
-      ),
-    ));
-
-    if (mounted && security['hasThreat'] == true) {
+    if (security['hasThreat'] == true) {
       _showSecurityWarning(security);
     }
   }
@@ -212,10 +228,25 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  void _applySnapshotToGauges(NetworkSnapshot snap) {
+    _speedValue = snap.download.success ? snap.download.mbps.clamp(0, 100) : 0;
+    _uploadValue = snap.upload.success ? snap.upload.mbps.clamp(0, 40) : 0;
+    _needleController.forward(from: 0);
+    _uploadNeedleController.forward(from: 0);
+  }
+
   Future<void> _startCompare() async {
-    setState(() => _isComparing = true);
+    setState(() {
+      _isComparing = true;
+      _speedValue = 0;
+      _uploadValue = 0;
+    });
     final baseline = await _captureSnapshot();
-    setState(() => _isComparing = false);
+    if (!mounted) return;
+    setState(() {
+      _isComparing = false;
+      _applySnapshotToGauges(baseline);
+    });
 
     if (!mounted) return;
     await showDialog<void>(
@@ -259,21 +290,27 @@ class _HomeScreenState extends State<HomeScreen>
         result.verdict == DiagnosisVerdict.mobileIssue ? 'Mobile Data' : 'Wi-Fi';
 
     if (!mounted) return;
-    setState(() => _isComparing = false);
+    setState(() {
+      _isComparing = false;
+      _applySnapshotToGauges(second);
+      _primarySnapshot = baseline;
+      _secondarySnapshot = second;
+      _security = null;
+      _ipInfo = null;
+      _diagnosis = result;
+      _resultTimestamp = DateTime.now();
+      _diagnosisContext = diagnosisContext;
+      _reportExpanded = true;
+    });
+  }
 
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ResultScreen(
-        timestamp: DateTime.now(),
-        diagnosisContext: diagnosisContext,
-        primary: baseline,
-        secondary: second,
-        diagnosis: result,
-        onRunAgain: () {
-          Navigator.of(context).pop();
-          _startCompare();
-        },
-      ),
-    ));
+  void _onRunAgain() {
+    setState(() => _reportExpanded = false);
+    if (_secondarySnapshot != null) {
+      _startCompare();
+    } else {
+      _startDiagnosis();
+    }
   }
 
   bool get busy => _isDiagnosing || _isComparing;
@@ -296,44 +333,50 @@ class _HomeScreenState extends State<HomeScreen>
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildTopBar(),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildConnectionBadge(),
-                              const SizedBox(height: 24),
-                              _buildGauge(),
-                              const SizedBox(height: 12),
-                              Text(
-                                _phaseLabel,
-                                style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 13,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ],
+                          const SizedBox(height: 12),
+                          _buildConnectionBadge(),
+                          const SizedBox(height: 20),
+                          _buildGaugeRow(),
+                          const SizedBox(height: 12),
+                          Text(
+                            _phaseLabel,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                              letterSpacing: 1,
+                            ),
                           ),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildWave(),
-                              const SizedBox(height: 24),
-                              PrimaryCtaButton(
-                                label: _isDiagnosing ? "Testing..." : "Start Test",
-                                onPressed: busy ? null : _startDiagnosis,
-                              ),
-                              const SizedBox(height: 12),
-                              SecondaryCtaButton(
-                                icon: Icons.compare_arrows,
-                                label: _isComparing
-                                    ? "Comparing..."
-                                    : "Compare Wi-Fi vs Mobile",
-                                onPressed: busy ? null : _startCompare,
-                              ),
-                            ],
+                          const SizedBox(height: 20),
+                          _buildWave(),
+                          const SizedBox(height: 24),
+                          PrimaryCtaButton(
+                            label: _isDiagnosing ? "Testing..." : "Start Test",
+                            onPressed: busy ? null : _startDiagnosis,
+                          ),
+                          const SizedBox(height: 12),
+                          SecondaryCtaButton(
+                            icon: Icons.compare_arrows,
+                            label: _isComparing
+                                ? "Comparing..."
+                                : "Compare Wi-Fi vs Mobile",
+                            onPressed: busy ? null : _startCompare,
+                          ),
+                          const SizedBox(height: 24),
+                          ReportCard(
+                            timestamp: _resultTimestamp,
+                            diagnosisContext: _diagnosisContext,
+                            primary: _primarySnapshot,
+                            secondary: _secondarySnapshot,
+                            security: _security,
+                            ipInfo: _ipInfo,
+                            diagnosis: _diagnosis,
+                            expanded: _reportExpanded,
+                            onToggleExpanded: () =>
+                                setState(() => _reportExpanded = !_reportExpanded),
+                            onRunAgain: _onRunAgain,
                           ),
                         ],
                       ),
@@ -406,20 +449,62 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildGauge() {
+  Widget _buildGaugeRow() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final gaugeSize = (constraints.maxWidth * 0.72).clamp(200.0, 275.0);
-        return AnimatedBuilder(
-          animation: _needleController,
-          builder: (context, child) {
-            final animatedValue = _speedValue *
-                Curves.easeOutCubic.transform(_needleController.value);
-            return SpeedGauge(
-                value: animatedValue, size: gaugeSize, unitLabel: 'Mbps down');
-          },
+        final gaugeSize = (constraints.maxWidth * 0.34).clamp(120.0, 160.0);
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildGaugeCard(
+              label: 'Download',
+              size: gaugeSize,
+              controller: _needleController,
+              value: _speedValue,
+              maxValue: 100,
+              color: AppColors.accentPrimaryGlow,
+            ),
+            _buildGaugeCard(
+              label: 'Upload',
+              size: gaugeSize,
+              controller: _uploadNeedleController,
+              value: _uploadValue,
+              maxValue: 40,
+              color: AppColors.accentSecondary,
+            ),
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildGaugeCard({
+    required String label,
+    required double size,
+    required AnimationController controller,
+    required double value,
+    required double maxValue,
+    required Color color,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedBuilder(
+          animation: controller,
+          builder: (context, child) {
+            final animatedValue =
+                value * Curves.easeOutCubic.transform(controller.value);
+            return SpeedGauge(value: animatedValue, size: size, maxValue: maxValue);
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(label,
+            style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1)),
+      ],
     );
   }
 

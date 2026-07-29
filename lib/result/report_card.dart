@@ -1,29 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../core/cta_button.dart';
-import '../core/responsive.dart';
 import '../core/theme.dart' show AppColors, connectionIcon;
 import '../diagnosis/diagnosis_engine.dart';
 import '../network/device_status.dart';
 import '../network/network_tester.dart';
 import 'signal_path.dart';
-import 'speed_gauge.dart';
 
-/// The full report for one diagnostic run — pushed as its own page once a
-/// scan (or a Wi-Fi vs Mobile compare) finishes, instead of growing the
-/// launcher screen into a live results dashboard. [secondary] is only set
-/// for a compare run; [security]/[ipInfo] are only collected on a solo run.
-class ResultScreen extends StatelessWidget {
-  final DateTime timestamp;
+/// The full diagnostic report, rendered in place on [HomeScreen] instead of
+/// a separate pushed page. Collapses to a one-line verdict strip via
+/// [expanded]/[onToggleExpanded] so re-running a test doesn't mean
+/// scrolling past a full report every time. Shows a placeholder until the
+/// first run completes ([diagnosis] null). [secondary] is only set for a
+/// compare run; [security]/[ipInfo] are only collected on a solo run.
+class ReportCard extends StatelessWidget {
+  final DateTime? timestamp;
   final String diagnosisContext;
-  final NetworkSnapshot primary;
+  final NetworkSnapshot? primary;
   final NetworkSnapshot? secondary;
   final Map<String, dynamic>? security;
   final IpInfoResult? ipInfo;
-  final DiagnosisResult diagnosis;
+  final DiagnosisResult? diagnosis;
+  final bool expanded;
+  final VoidCallback onToggleExpanded;
   final VoidCallback onRunAgain;
 
-  const ResultScreen({
+  const ReportCard({
     super.key,
     required this.timestamp,
     required this.diagnosisContext,
@@ -32,6 +34,8 @@ class ResultScreen extends StatelessWidget {
     this.security,
     this.ipInfo,
     required this.diagnosis,
+    required this.expanded,
+    required this.onToggleExpanded,
     required this.onRunAgain,
   });
 
@@ -39,147 +43,129 @@ class ResultScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final diagnosis = this.diagnosis;
+    final primary = this.primary;
+    if (diagnosis == null || primary == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.surfaceBorder),
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.radio_button_unchecked,
+                color: AppColors.textMuted, size: 22),
+            SizedBox(height: 8),
+            Text(
+              'Run a test to see your full report here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+            ),
+          ],
+        ),
+      );
+    }
+
     final color = _verdictColor(diagnosis.verdict);
-    return Scaffold(
-      backgroundColor: AppColors.bgTop,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgTop,
-        foregroundColor: AppColors.textPrimary,
-        title: Text(isCompare ? 'Comparison Result' : 'Test Result'),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.surfaceBorder),
       ),
-      body: AppBackground(
-        child: SafeArea(
-          child: SingleChildScrollView(
-            child: AppBody(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onToggleExpanded,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Icon(_verdictIcon(diagnosis.verdict), color: color, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(_verdictIcon(diagnosis.verdict),
-                            color: color, size: 16),
-                        const SizedBox(width: 6),
                         Text(
                           diagnosis.title,
                           style: TextStyle(
                               color: color,
                               fontWeight: FontWeight.bold,
-                              fontSize: 13),
+                              fontSize: 13.5),
                         ),
-                        const Spacer(),
-                        Text(_formatTimestamp(timestamp),
-                            style: const TextStyle(
-                                color: AppColors.textMuted, fontSize: 11)),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$diagnosisContext · ${_formatTimestamp(timestamp)}',
+                          style: const TextStyle(
+                              color: AppColors.textMuted, fontSize: 11),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 18),
-                    if (isCompare) _buildCompareHero() else _buildSoloHero(),
-                    const SizedBox(height: 18),
-                    if (!isCompare) ...[
-                      _buildTileRow(),
-                      const SizedBox(height: 16),
-                    ],
-                    SignalPath(
-                        diagnosis: diagnosis, diagnosisContext: diagnosisContext),
-                    const SizedBox(height: 12),
-                    _buildDiagnosisCard(color),
-                    const SizedBox(height: 12),
-                    _buildFooter(),
-                    const SizedBox(height: 24),
-                    _buildActions(context),
-                  ],
-                ),
+                  ),
+                  AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: const Icon(Icons.keyboard_arrow_down,
+                        color: AppColors.textMuted),
+                  ),
+                ],
               ),
             ),
           ),
-        ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            child: ClipRect(
+              child: expanded
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Divider(color: AppColors.surfaceBorder, height: 1),
+                          const SizedBox(height: 14),
+                          if (isCompare)
+                            _buildCompareHero()
+                          else
+                            _buildTileRow(),
+                          const SizedBox(height: 14),
+                          SignalPath(
+                              diagnosis: diagnosis,
+                              diagnosisContext: diagnosisContext),
+                          const SizedBox(height: 12),
+                          _buildDiagnosisCard(diagnosis),
+                          const SizedBox(height: 12),
+                          _buildFooter(primary),
+                          const SizedBox(height: 16),
+                          PrimaryCtaButton(
+                            label: 'Test Again',
+                            height: 48,
+                            onPressed: onRunAgain,
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // ── Hero ─────────────────────────────────────────────────────────
-
-  Widget _buildSoloHero() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final ringSize = (constraints.maxWidth * 0.44).clamp(140.0, 200.0);
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _metricRing(
-              label: 'DOWNLOAD',
-              icon: Icons.download_rounded,
-              result: primary.download,
-              color: AppColors.accentPrimary,
-              size: ringSize,
-            ),
-            _metricRing(
-              label: 'UPLOAD',
-              icon: Icons.upload_rounded,
-              result: primary.upload,
-              color: AppColors.accentSecondary,
-              size: ringSize,
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _metricRing({
-    required String label,
-    required IconData icon,
-    required SpeedResult result,
-    required Color color,
-    required double size,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        result.success
-            ? SpeedGauge(value: result.mbps, size: size)
-            : SizedBox(
-                width: size,
-                height: size,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surface,
-                    border: Border.all(color: AppColors.coral, width: 2),
-                  ),
-                  child: const Center(
-                    child: Text('Failed',
-                        style: TextStyle(
-                            color: AppColors.coral,
-                            fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 14),
-            const SizedBox(width: 4),
-            Text(label,
-                style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1)),
-          ],
-        ),
-      ],
-    );
-  }
+  // ── Compare hero ─────────────────────────────────────────────────
 
   Widget _buildCompareHero() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _snapshotCard(primary)),
+        Expanded(child: _snapshotCard(primary!)),
         const SizedBox(width: 12),
         Expanded(child: _snapshotCard(secondary!)),
       ],
@@ -190,7 +176,7 @@ class ResultScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.surfaceBorder),
       ),
@@ -241,6 +227,7 @@ class ResultScreen extends StatelessWidget {
   // ── PRTG-style sensor tiles ──────────────────────────────────────
 
   Widget _buildTileRow() {
+    final primary = this.primary!;
     return Row(
       children: [
         Expanded(
@@ -271,7 +258,7 @@ class ResultScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.surfaceBorder),
       ),
@@ -323,12 +310,12 @@ class ResultScreen extends StatelessWidget {
 
   // ── Diagnosis ────────────────────────────────────────────────────
 
-  Widget _buildDiagnosisCard(Color color) {
+  Widget _buildDiagnosisCard(DiagnosisResult diagnosis) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.surfaceBorder),
       ),
@@ -350,7 +337,7 @@ class ResultScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFooter() {
+  Widget _buildFooter(NetworkSnapshot primary) {
     final ping = primary.ping;
     final lines = <String>[
       if (ping.received > 0)
@@ -364,7 +351,7 @@ class ResultScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.6),
+        color: AppColors.surface.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.surfaceBorder),
       ),
@@ -380,33 +367,12 @@ class ResultScreen extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildActions(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: SecondaryCtaButton(
-            label: 'Done',
-            height: 48,
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: PrimaryCtaButton(
-            label: 'Test Again',
-            height: 48,
-            onPressed: onRunAgain,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 // ── Formatting helpers ────────────────────────────────────────────
 
-String _formatTimestamp(DateTime dt) {
+String _formatTimestamp(DateTime? dt) {
+  if (dt == null) return '--';
   String two(int n) => n.toString().padLeft(2, '0');
   return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
 }

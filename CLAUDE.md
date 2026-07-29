@@ -17,11 +17,15 @@ is `com.example.smart_network_diagnostic`.
   `connectionIcon()`. Extracted out of the old `main.dart` specifically so
   screens/widgets in other modules (`home`, `history`, `result`) don't have
   to import the app entry point just to reach a color constant.
-- `lib/home/` — the launcher screen.
+- `lib/home/` — the launcher screen, now also the report screen.
   - `home_screen.dart` — `HomeScreen`/`_HomeScreenState`. Orchestrates the
     other modules: runs download/upload/ping tests, calls `SecurityCheck`
-    and `DiagnosisEngine`, saves each run via `HistoryStore`, and hosts the
-    gauge/card/compare UI. The top-bar history icon pushes `HistoryScreen`.
+    and `DiagnosisEngine`, saves each run via `HistoryStore`, hosts the
+    dual download/upload gauge row (each animated by its own
+    `AnimationController`), and renders the finished run's `ReportCard`
+    inline below the CTAs — no separate results page/navigation. The
+    report auto-expands on completion and collapses again the moment
+    "Test Again" is tapped. The top-bar history icon pushes `HistoryScreen`.
   - `wave_painter.dart` — `WavePainter`, the animated bottom activity
     waveform `CustomPainter` used by `HomeScreen`.
 - `lib/network/` — raw network measurement.
@@ -78,17 +82,19 @@ is `com.example.smart_network_diagnostic`.
     `shared_preferences` under key `diagnostic_history`.
   - `history_screen.dart` — `HistoryScreen` lists past runs newest-first
     with a clear-history action.
-- `lib/result/` — the full diagnostic report page.
-  - `result_screen.dart` — `ResultScreen`, pushed after a scan or compare
-    run finishes.
+- `lib/result/` — the diagnostic report, rendered inline on `HomeScreen`.
+  - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
+    collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`
+    or a compare pair; shows a placeholder until the first run completes.
+    Replaced the old pushed `ResultScreen` page.
   - `signal_path.dart` — `SignalPath`, the per-hop fault-chain
     visualization widget.
-  - `speed_gauge.dart` — `SpeedGauge`, the needle gauge widget (also used by
-    `HomeScreen`).
+  - `speed_gauge.dart` — `SpeedGauge`, the needle gauge widget (used twice
+    on `HomeScreen`, for download and upload).
 - `test/widget_test.dart` — targets `HomeScreen` (via `MyApp` from
-  `lib/app.dart`); assertions match current UI text (`PING`, `PACKET LOSS`,
-  `SECURITY`, `UPLOAD` card labels, `Mbps down`, `Not checked`, `Start Test`,
-  `Compare Wi-Fi vs Mobile`).
+  `lib/app.dart`); assertions match the idle UI text (`Download`, `Upload`
+  gauge labels, `Ready to test`, `Start Test`, `Compare Wi-Fi vs Mobile`,
+  and the `ReportCard` placeholder string).
 - `ScanGuard/PasswordVault/180634937/` — an empty, unexplained directory
   unrelated to the Flutter app (numeric name, no file extension, dated
   2025-07-14). Not referenced by any Dart code. Leave it alone unless the user

@@ -8,11 +8,14 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
     expect(find.text('NetDiagnose'), findsOneWidget);
-    expect(find.text('0.0'), findsOneWidget);
-    expect(find.text('Mbps down'), findsOneWidget);
+    expect(find.text('0.0'), findsNWidgets(2));
+    expect(find.text('Download'), findsOneWidget);
+    expect(find.text('Upload'), findsOneWidget);
     expect(find.text('Ready to test'), findsOneWidget);
 
     expect(find.text('Start Test'), findsOneWidget);
     expect(find.text('Compare Wi-Fi vs Mobile'), findsOneWidget);
+    expect(find.text('Run a test to see your full report here.'),
+        findsOneWidget);
   });
 }
