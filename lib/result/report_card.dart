@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 import '../core/cta_button.dart';
 import '../core/theme.dart' show AppColors, connectionIcon;
 import '../diagnosis/diagnosis_engine.dart';
 import '../network/network_tester.dart';
+import 'report_pdf.dart';
 import 'signal_path.dart';
 
 /// The full diagnostic report, rendered in place on [HomeScreen] instead of
@@ -11,7 +13,8 @@ import 'signal_path.dart';
 /// [expanded]/[onToggleExpanded] so re-running a test doesn't mean
 /// scrolling past a full report every time. Renders nothing until the first
 /// run completes ([diagnosis] null). [secondary] is only set for a compare
-/// run; [security]/[ipInfo] are only collected on a solo run.
+/// run; [security]/[ipInfo] are only collected on a solo run. [onClear]
+/// dismisses the card back to that empty state.
 class ReportCard extends StatelessWidget {
   final DateTime? timestamp;
   final String diagnosisContext;
@@ -23,6 +26,7 @@ class ReportCard extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggleExpanded;
   final VoidCallback onRunAgain;
+  final VoidCallback onClear;
 
   const ReportCard({
     super.key,
@@ -36,6 +40,7 @@ class ReportCard extends StatelessWidget {
     required this.expanded,
     required this.onToggleExpanded,
     required this.onRunAgain,
+    required this.onClear,
   });
 
   bool get isCompare => secondary != null;
@@ -105,7 +110,13 @@ class ReportCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    color: AppColors.textMuted,
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Clear results',
+                    onPressed: onClear,
+                  ),
                   AnimatedRotation(
                     turns: expanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 250),
@@ -142,10 +153,25 @@ class ReportCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   _buildDetailsGrid(primary),
                   const SizedBox(height: 16),
-                  PrimaryCtaButton(
-                    label: 'Test Again',
-                    height: 48,
-                    onPressed: onRunAgain,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SecondaryCtaButton(
+                          icon: Icons.download_rounded,
+                          label: 'Download PDF',
+                          height: 48,
+                          onPressed: () => _downloadPdf(context),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: PrimaryCtaButton(
+                          label: 'Test Again',
+                          height: 48,
+                          onPressed: onRunAgain,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -154,6 +180,32 @@ class ReportCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _downloadPdf(BuildContext context) async {
+    final diagnosis = this.diagnosis;
+    final primary = this.primary;
+    if (diagnosis == null || primary == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await buildReportPdf(
+        timestamp: timestamp,
+        diagnosisContext: diagnosisContext,
+        primary: primary,
+        secondary: secondary,
+        security: security,
+        ipInfo: ipInfo,
+        diagnosis: diagnosis,
+      );
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'netdiagnose_report_${_filenameTimestamp(timestamp)}.pdf',
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not generate the PDF report.')),
+      );
+    }
   }
 
   String _collapsedSummary() {
@@ -444,6 +496,12 @@ String _formatTimestamp(DateTime? dt) {
   if (dt == null) return '--';
   String two(int n) => n.toString().padLeft(2, '0');
   return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+}
+
+String _filenameTimestamp(DateTime? dt) {
+  final d = dt ?? DateTime.now();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.year}${two(d.month)}${two(d.day)}_${two(d.hour)}${two(d.minute)}';
 }
 
 String _formatSpeed(SpeedResult? r) {

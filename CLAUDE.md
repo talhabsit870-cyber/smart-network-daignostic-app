@@ -86,7 +86,15 @@ is `com.example.smart_network_diagnostic`.
   - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
     collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`
     or a compare pair; renders nothing until the first run completes.
-    Replaced the old pushed `ResultScreen` page.
+    Replaced the old pushed `ResultScreen` page. The header's close icon
+    calls `onClear` (wired to `HomeScreen._clearReport()`, which also resets
+    the gauges) so a run can be dismissed without starting a new one. The
+    body's "Download PDF" button builds a PDF via `report_pdf.dart` and
+    hands it to `package:printing`'s share/save sheet.
+  - `report_pdf.dart` — `buildReportPdf()`, renders the same data as
+    `ReportCard` through `package:pdf`'s widget set (`pw.*`) into PDF bytes.
+    Kept independent of `ReportCard`'s private Flutter-widget formatting
+    helpers since it's a different widget tree entirely.
   - `signal_path.dart` — `SignalPath`, the per-hop fault-chain
     visualization widget.
   - `speed_gauge.dart` — `SpeedGauge`, the needle gauge widget (used twice
@@ -108,6 +116,8 @@ is `com.example.smart_network_diagnostic`.
 `http`, `connectivity_plus`, `network_info_plus`, `shared_preferences`,
 `permission_handler`, `device_info_plus`, and `battery_plus` are all
 actively used (the latter two via `lib/network/device_status.dart`).
+`pdf` and `printing` back the report's "Download PDF" action
+(`lib/result/report_pdf.dart`, `lib/result/report_card.dart`).
 
 ## Platform permissions
 

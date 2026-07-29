@@ -313,6 +313,22 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  void _clearReport() {
+    setState(() {
+      _primarySnapshot = null;
+      _secondarySnapshot = null;
+      _security = null;
+      _ipInfo = null;
+      _diagnosis = null;
+      _resultTimestamp = null;
+      _diagnosisContext = '';
+      _reportExpanded = false;
+      _speedValue = 0;
+      _uploadValue = 0;
+      _phaseLabel = "Ready to test";
+    });
+  }
+
   bool get busy => _isDiagnosing || _isComparing;
 
   @override
@@ -342,7 +358,9 @@ class _HomeScreenState extends State<HomeScreen>
                           _buildWave(),
                           const SizedBox(height: 20),
                           PrimaryCtaButton(
-                            label: _isDiagnosing ? "Testing..." : "Start Test",
+                            label: _isDiagnosing
+                                ? "Testing..."
+                                : (_diagnosis != null ? "Test Again" : "Start Test"),
                             onPressed: busy ? null : _startDiagnosis,
                           ),
                           const SizedBox(height: 10),
@@ -366,6 +384,7 @@ class _HomeScreenState extends State<HomeScreen>
                             onToggleExpanded: () =>
                                 setState(() => _reportExpanded = !_reportExpanded),
                             onRunAgain: _onRunAgain,
+                            onClear: _clearReport,
                           ),
                         ],
                       ),
