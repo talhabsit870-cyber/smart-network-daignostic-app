@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (mounted) {
       _needleController.forward(from: 0);
       setState(() {
-        _speedValue = download.success ? download.mbps.clamp(0, 100) : 0;
+        _speedValue = download.success ? download.mbps : 0;
         _phaseLabel = "Testing upload…";
       });
     }
@@ -117,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (mounted) {
       _uploadNeedleController.forward(from: 0);
       setState(() {
-        _uploadValue = upload.success ? upload.mbps.clamp(0, 100) : 0;
+        _uploadValue = upload.success ? upload.mbps : 0;
         _phaseLabel = "Testing latency…";
       });
     }
@@ -229,8 +229,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _applySnapshotToGauges(NetworkSnapshot snap) {
-    _speedValue = snap.download.success ? snap.download.mbps.clamp(0, 100) : 0;
-    _uploadValue = snap.upload.success ? snap.upload.mbps.clamp(0, 100) : 0;
+    _speedValue = snap.download.success ? snap.download.mbps : 0;
+    _uploadValue = snap.upload.success ? snap.upload.mbps : 0;
     _needleController.forward(from: 0);
     _uploadNeedleController.forward(from: 0);
   }

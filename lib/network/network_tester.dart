@@ -177,15 +177,16 @@ class NetworkTester {
     return PingStats(host: host.host, sent: sent, received: received, rttsMs: rtts);
   }
 
-  /// Downloads from the first reachable host and computes real throughput
-  /// in Mbps, sustaining the transfer over a time window (not just one
-  /// fixed-size shot) so that DNS/TLS/TCP-slow-start overhead doesn't
-  /// dominate the measurement on higher-bandwidth or higher-latency links.
-  static Future<SpeedResult> testDownloadSpeed() async {
+  /// Downloads from the first reachable host over [streams] concurrent
+  /// connections and computes aggregate real throughput in Mbps. A single
+  /// TCP stream's window caps out well below what fast (100+ Mbps) links can
+  /// actually deliver — Speedtest/Fast.com/nPerf all measure this way for
+  /// the same reason.
+  static Future<SpeedResult> testDownloadSpeed({int streams = 4}) async {
     for (final url in _downloadHosts) {
-      final client = http.Client();
+      final clients = List.generate(streams, (_) => http.Client());
       try {
-        final sample = await _measureStreamedDownload(client, url);
+        final sample = await _measureParallelDownload(clients, url);
         if (sample != null) {
           final mbps = (sample.bytes * 8) / (sample.seconds * 1000000);
           return SpeedResult(
@@ -199,64 +200,67 @@ class NetworkTester {
       } catch (_) {
         // try next host
       } finally {
-        client.close();
+        for (final client in clients) {
+          client.close();
+        }
       }
     }
     return SpeedResult.failed('All download test servers unreachable');
   }
 
-  /// Repeatedly (re)requests [url] on [client], streaming the response body
-  /// and timing only from the first received byte (excluding connection
-  /// setup) so the measurement reflects sustained transfer speed rather
-  /// than handshake overhead. Stops once enough time and data have been
-  /// sampled, capped by [maxDuration]/[maxBytes] so fast links don't pull
-  /// down excessive data.
-  static Future<_ThroughputSample?> _measureStreamedDownload(
-    http.Client client,
+  /// Runs one concurrent streamed download per [clients] entry against
+  /// [url], summing bytes across all of them against a single shared clock.
+  /// Timing starts on the first byte received on any stream (excluding
+  /// connection setup) and each stream re-requests if the response body
+  /// ends before [maxDuration]/[maxBytesPerStream] is reached, capped by
+  /// [maxAttemptsPerStream] so a run of empty 2xx responses can't spin
+  /// forever waiting for a byte that starts the clock.
+  static Future<_ThroughputSample?> _measureParallelDownload(
+    List<http.Client> clients,
     Uri url, {
-    Duration minDuration = const Duration(seconds: 3),
-    Duration maxDuration = const Duration(seconds: 10),
-    int minBytes = 3 * 1024 * 1024,
-    int maxBytes = 20 * 1024 * 1024,
-    int maxAttempts = 25,
+    Duration maxDuration = const Duration(seconds: 8),
+    int maxBytesPerStream = 30 * 1024 * 1024,
+    int maxAttemptsPerStream = 25,
   }) async {
     final stopwatch = Stopwatch();
     int totalBytes = 0;
-    int attempts = 0;
 
-    while (attempts < maxAttempts &&
-        (!stopwatch.isRunning || stopwatch.elapsed < maxDuration)) {
-      attempts++;
-      http.StreamedResponse response;
-      try {
-        response = await client
-            .send(http.Request('GET', url))
-            .timeout(const Duration(seconds: 10));
-      } catch (_) {
-        break;
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) break;
-
-      bool enoughData = false;
-      try {
-        await for (final chunk in response.stream) {
-          if (!stopwatch.isRunning) stopwatch.start();
-          totalBytes += chunk.length;
-          if (totalBytes >= maxBytes ||
-              stopwatch.elapsed >= maxDuration ||
-              (stopwatch.elapsed >= minDuration && totalBytes >= minBytes)) {
-            enoughData = true;
-            break;
-          }
+    Future<void> runStream(http.Client client) async {
+      int attempts = 0;
+      while (attempts < maxAttemptsPerStream &&
+          (!stopwatch.isRunning || stopwatch.elapsed < maxDuration)) {
+        attempts++;
+        http.StreamedResponse response;
+        try {
+          response = await client
+              .send(http.Request('GET', url))
+              .timeout(const Duration(seconds: 10));
+        } catch (_) {
+          return;
         }
-      } catch (_) {
-        break;
-      }
+        if (response.statusCode < 200 || response.statusCode >= 300) return;
 
-      if (enoughData) break;
+        int streamBytes = 0;
+        try {
+          await for (final chunk in response.stream) {
+            if (!stopwatch.isRunning) stopwatch.start();
+            totalBytes += chunk.length;
+            streamBytes += chunk.length;
+            if (streamBytes >= maxBytesPerStream ||
+                stopwatch.elapsed >= maxDuration) {
+              return;
+            }
+          }
+        } catch (_) {
+          return;
+        }
+      }
     }
 
-    if (totalBytes == 0 || !stopwatch.isRunning && stopwatch.elapsedMilliseconds == 0) {
+    await Future.wait(clients.map(runStream));
+    stopwatch.stop();
+
+    if (totalBytes == 0 || stopwatch.elapsedMilliseconds == 0) {
       return null;
     }
     final seconds = stopwatch.elapsedMilliseconds / 1000.0;
@@ -264,70 +268,83 @@ class NetworkTester {
     return _ThroughputSample(totalBytes, seconds);
   }
 
-  /// Uploads random in-memory payloads and computes real upload throughput
-  /// in Mbps. A small untimed warm-up request absorbs the connection
-  /// handshake first, then timed payloads are sent back-to-back over the
-  /// same (kept-alive) connection until a sustained sample is collected.
-  static Future<SpeedResult> testUploadSpeed({int chunkBytes = 512 * 1024}) async {
-    const minDuration = Duration(seconds: 3);
-    const maxDuration = Duration(seconds: 10);
-    const maxAttempts = 20;
+  /// Uploads random in-memory payloads over [streams] concurrent connections
+  /// and computes aggregate upload throughput in Mbps, for the same reason
+  /// download is measured over multiple streams. A small untimed warm-up
+  /// request absorbs the first connection's handshake before timing starts;
+  /// the upload payload itself is generated once and reused across every
+  /// request on every stream so the (CPU-bound) random-fill work never lands
+  /// inside the measured window.
+  static Future<SpeedResult> testUploadSpeed({
+    int chunkBytes = 512 * 1024,
+    int streams = 4,
+  }) async {
+    const maxDuration = Duration(seconds: 8);
+    const maxAttemptsPerStream = 40;
 
-    final client = http.Client();
+    final warmupClient = http.Client();
     try {
-      try {
-        await client
-            .post(
-              _uploadHost,
-              headers: {'Content-Type': 'application/octet-stream'},
-              body: _randomPayload(8 * 1024),
-            )
-            .timeout(const Duration(seconds: 10));
-      } catch (_) {
-        return SpeedResult.failed('Could not reach upload test server');
-      }
+      await warmupClient
+          .post(
+            _uploadHost,
+            headers: {'Content-Type': 'application/octet-stream'},
+            body: _randomPayload(8 * 1024),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      return SpeedResult.failed('Could not reach upload test server');
+    } finally {
+      warmupClient.close();
+    }
 
-      final stopwatch = Stopwatch();
-      int totalBytes = 0;
+    final payload = _randomPayload(chunkBytes);
+    final clients = List.generate(streams, (_) => http.Client());
+    final stopwatch = Stopwatch()..start();
+    int totalBytes = 0;
+
+    Future<void> runStream(http.Client client) async {
       int attempts = 0;
-
-      while (attempts < maxAttempts && stopwatch.elapsed < maxDuration) {
+      while (attempts < maxAttemptsPerStream && stopwatch.elapsed < maxDuration) {
         attempts++;
-        stopwatch.start();
         http.Response response;
         try {
           response = await client
               .post(
                 _uploadHost,
                 headers: {'Content-Type': 'application/octet-stream'},
-                body: _randomPayload(chunkBytes),
+                body: payload,
               )
               .timeout(const Duration(seconds: 10));
         } catch (_) {
-          break;
+          return;
         }
-        if (response.statusCode < 200 || response.statusCode >= 300) break;
+        if (response.statusCode < 200 || response.statusCode >= 300) return;
         totalBytes += chunkBytes;
-        if (stopwatch.elapsed >= minDuration) break;
       }
-      stopwatch.stop();
-
-      if (totalBytes == 0 || stopwatch.elapsedMilliseconds <= 0) {
-        return SpeedResult.failed('Upload too fast to measure');
-      }
-
-      final seconds = stopwatch.elapsedMilliseconds / 1000.0;
-      final mbps = (totalBytes * 8) / (seconds * 1000000);
-      return SpeedResult(
-        success: true,
-        mbps: mbps,
-        bytes: totalBytes,
-        seconds: seconds,
-        source: _uploadHost.host,
-      );
-    } finally {
-      client.close();
     }
+
+    try {
+      await Future.wait(clients.map(runStream));
+    } finally {
+      for (final client in clients) {
+        client.close();
+      }
+    }
+    stopwatch.stop();
+
+    if (totalBytes == 0 || stopwatch.elapsedMilliseconds <= 0) {
+      return SpeedResult.failed('Upload too fast to measure');
+    }
+
+    final seconds = stopwatch.elapsedMilliseconds / 1000.0;
+    final mbps = (totalBytes * 8) / (seconds * 1000000);
+    return SpeedResult(
+      success: true,
+      mbps: mbps,
+      bytes: totalBytes,
+      seconds: seconds,
+      source: _uploadHost.host,
+    );
   }
 
   /// Looks up the device's public-facing IP address and the ISP/organization
