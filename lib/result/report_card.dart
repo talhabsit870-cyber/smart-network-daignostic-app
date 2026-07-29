@@ -283,27 +283,44 @@ class ReportCard extends StatelessWidget {
 
   Widget _buildTileRow() {
     final primary = this.primary!;
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _tile("PING", _formatPingShort(primary.ping), Icons.bolt_rounded,
-              _lossColor(primary.ping)),
+        Row(
+          children: [
+            Expanded(
+              child: _tile("PING", _formatPingShort(primary.ping),
+                  Icons.bolt_rounded, _lossColor(primary.ping)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _tile("PACKET LOSS", _formatLossShort(primary.ping),
+                  Icons.grain_rounded, _lossColor(primary.ping)),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _tile("PACKET LOSS", _formatLossShort(primary.ping),
-              Icons.grain_rounded, _lossColor(primary.ping)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _tile(
-            "SECURITY",
-            security == null ? "Not checked" : security!['label'] as String,
-            Icons.shield_outlined,
-            security == null
-                ? AppColors.textMuted
-                : security!['color'] as Color,
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _tile(
+                "BUFFERBLOAT",
+                _formatBufferbloatShort(primary.bufferbloat),
+                Icons.speed_rounded,
+                _bufferbloatColor(primary.bufferbloat),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _tile(
+                "SECURITY",
+                security == null ? "Not checked" : security!['label'] as String,
+                Icons.shield_outlined,
+                security == null
+                    ? AppColors.textMuted
+                    : security!['color'] as Color,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -434,6 +451,12 @@ class ReportCard extends StatelessWidget {
     final rows = <(String, String)>[
       if (ping.received > 0) ('Ping range', '${ping.minMs}–${ping.maxMs} ms'),
       if (ping.jitterMs != null) ('Jitter', '${ping.jitterMs!.toStringAsFixed(0)} ms'),
+      if (primary.bufferbloat?.success == true)
+        (
+          'Latency under load',
+          '${primary.bufferbloat!.loadedMs!.toStringAsFixed(0)} ms '
+              '(+${primary.bufferbloat!.increaseMs!.toStringAsFixed(0)} ms vs idle)',
+        ),
       if (ipInfo != null && ipInfo.success && ipInfo.ip != null)
         ('Public IP', ipInfo.ip!),
       if (ipInfo != null && ipInfo.success && ipInfo.isp != null) ('ISP', ipInfo.isp!),
@@ -533,6 +556,25 @@ Color _lossColor(PingStats? p) {
   if (p.received == 0 || p.lossPercent >= 20) return AppColors.coral;
   if (p.lossPercent > 0) return AppColors.amber;
   return AppColors.green;
+}
+
+String _formatBufferbloatShort(BufferbloatResult? b) {
+  if (b == null || !b.success) return "--";
+  return b.grade;
+}
+
+Color _bufferbloatColor(BufferbloatResult? b) {
+  if (b == null || !b.success) return AppColors.textMuted;
+  switch (b.grade) {
+    case 'A+':
+    case 'A':
+      return AppColors.green;
+    case 'B':
+    case 'C':
+      return AppColors.amber;
+    default:
+      return AppColors.coral;
+  }
 }
 
 Color _verdictColor(DiagnosisVerdict verdict) {

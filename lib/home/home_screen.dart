@@ -123,6 +123,9 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     final ping = await NetworkTester.testPingDetailed();
+    if (mounted) setState(() => _phaseLabel = "Testing latency under load…");
+
+    final bufferbloat = await NetworkTester.testBufferbloat(idlePing: ping);
     if (mounted) setState(() => _phaseLabel = "Checking security & diagnosing…");
 
     final security = await SecurityCheck().scanWiFiSecurity();
@@ -137,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen>
       download: download,
       upload: upload,
       deviceStatus: deviceStatus,
+      bufferbloat: bufferbloat,
     );
 
     final diagnosis = DiagnosisEngine.evaluateSingle(snapshot);

@@ -36,6 +36,7 @@ class NetworkSnapshot {
   final SpeedResult download;
   final SpeedResult upload;
   final DeviceStatus? deviceStatus;
+  final BufferbloatResult? bufferbloat;
 
   const NetworkSnapshot({
     required this.connectionLabel,
@@ -43,6 +44,7 @@ class NetworkSnapshot {
     required this.download,
     required this.upload,
     this.deviceStatus,
+    this.bufferbloat,
   });
 
   bool get isSlow =>
