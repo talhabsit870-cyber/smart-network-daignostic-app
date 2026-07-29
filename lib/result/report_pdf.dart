@@ -27,7 +27,20 @@ class _Palette {
   static final textMuted = PdfColor.fromInt(0xFF8CA0B8);
 }
 
-PdfColor _alpha(PdfColor c, double a) => PdfColor(c.red, c.green, c.blue, a);
+/// Blends [base] toward [_Palette.surface] by [amount] (0 = surface, 1 =
+/// base) and returns a fully **opaque** color. Used instead of [_alpha] for
+/// any card that has body text sitting on top of it: some PDF viewers/print
+/// pipelines flatten transparency against a white backdrop, which silently
+/// washes out light text (like [_Palette.textPrimary]) painted over an
+/// alpha-blended fill. A precomputed opaque blend can't be flattened wrong.
+PdfColor _tint(PdfColor base, double amount) {
+  double lerp(double a, double b) => a + (b - a) * amount;
+  return PdfColor(
+    lerp(_Palette.surface.red, base.red),
+    lerp(_Palette.surface.green, base.green),
+    lerp(_Palette.surface.blue, base.blue),
+  );
+}
 
 /// [security]'s 'color' entry is a Flutter [Color] (from `Colors.*`), not a
 /// [PdfColor] — the two packages each define their own color type.
@@ -143,9 +156,9 @@ pw.Widget _verdictBanner(DiagnosisResult diagnosis, PdfColor color) {
     width: double.infinity,
     padding: const pw.EdgeInsets.all(16),
     decoration: pw.BoxDecoration(
-      color: _alpha(color, 0.12),
+      color: _tint(color, 0.16),
       borderRadius: pw.BorderRadius.circular(10),
-      border: pw.Border.all(color: _alpha(color, 0.4), width: 1),
+      border: pw.Border.all(color: _tint(color, 0.55), width: 1),
     ),
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -178,9 +191,9 @@ pw.Widget _recommendationCallout(String recommendation) {
     width: double.infinity,
     padding: const pw.EdgeInsets.all(12),
     decoration: pw.BoxDecoration(
-      color: _alpha(_Palette.accentSecondary, 0.1),
+      color: _tint(_Palette.accentSecondary, 0.14),
       borderRadius: pw.BorderRadius.circular(10),
-      border: pw.Border.all(color: _alpha(_Palette.accentSecondary, 0.3)),
+      border: pw.Border.all(color: _tint(_Palette.accentSecondary, 0.4)),
     ),
     child: pw.Text(_stripEmoji(recommendation),
         style: pw.TextStyle(
