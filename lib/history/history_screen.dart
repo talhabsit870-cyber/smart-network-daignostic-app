@@ -141,7 +141,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   '${e.connectionLabel} · ${e.downloadMbps.toStringAsFixed(1)} Mbps down · '
                                   '${e.uploadMbps.toStringAsFixed(1)} Mbps up · '
                                   '${e.pingMs?.toStringAsFixed(0) ?? '--'}ms ping · '
-                                  '${e.lossPercent.toStringAsFixed(0)}% loss',
+                                  '${e.lossPercent.toStringAsFixed(0)}% loss'
+                                  '${e.bufferbloatGrade != null ? ' · Bufferbloat ${e.bufferbloatGrade}' : ''}',
                                   style: const TextStyle(
                                       color: AppColors.textMuted,
                                       fontSize: 12),

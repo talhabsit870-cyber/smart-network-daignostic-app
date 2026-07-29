@@ -260,6 +260,9 @@ pw.Widget _soloCard(NetworkSnapshot primary, Map<String, dynamic>? security) {
     _metricRow('Ping', _formatPing(primary.ping), _lossColor(primary.ping)),
     _metricRow('Packet loss', '${primary.ping.lossPercent.toStringAsFixed(0)}%',
         _lossColor(primary.ping)),
+    if (primary.bufferbloat?.success == true)
+      _metricRow('Bufferbloat', primary.bufferbloat!.grade,
+          _bufferbloatColor(primary.bufferbloat!)),
     _metricRow('Security', securityLabel, securityColor, last: true),
   ]);
 }
@@ -382,6 +385,19 @@ PdfColor _lossColor(PingStats p) {
   if (p.received == 0 || p.lossPercent >= 20) return _Palette.coral;
   if (p.lossPercent > 0) return _Palette.amber;
   return _Palette.green;
+}
+
+PdfColor _bufferbloatColor(BufferbloatResult b) {
+  switch (b.grade) {
+    case 'A+':
+    case 'A':
+      return _Palette.green;
+    case 'B':
+    case 'C':
+      return _Palette.amber;
+    default:
+      return _Palette.coral;
+  }
 }
 
 PdfColor _verdictColor(DiagnosisVerdict verdict) {

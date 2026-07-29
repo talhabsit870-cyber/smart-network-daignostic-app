@@ -13,6 +13,8 @@ class HistoryEntry {
   final String securityLabel;
   final String verdictTitle;
   final DiagnosisVerdict verdict;
+  final String? bufferbloatGrade;
+  final double? bufferbloatIncreaseMs;
 
   const HistoryEntry({
     required this.timestamp,
@@ -24,6 +26,8 @@ class HistoryEntry {
     required this.securityLabel,
     required this.verdictTitle,
     required this.verdict,
+    this.bufferbloatGrade,
+    this.bufferbloatIncreaseMs,
   });
 
   factory HistoryEntry.fromRun({
@@ -33,6 +37,7 @@ class HistoryEntry {
     required SpeedResult upload,
     required String securityLabel,
     required DiagnosisResult diagnosis,
+    BufferbloatResult? bufferbloat,
   }) {
     return HistoryEntry(
       timestamp: DateTime.now(),
@@ -44,6 +49,9 @@ class HistoryEntry {
       securityLabel: securityLabel,
       verdictTitle: diagnosis.title,
       verdict: diagnosis.verdict,
+      bufferbloatGrade: bufferbloat?.success == true ? bufferbloat!.grade : null,
+      bufferbloatIncreaseMs:
+          bufferbloat?.success == true ? bufferbloat!.increaseMs : null,
     );
   }
 
@@ -57,6 +65,8 @@ class HistoryEntry {
         "securityLabel": securityLabel,
         "verdictTitle": verdictTitle,
         "verdict": verdict.name,
+        "bufferbloatGrade": bufferbloatGrade,
+        "bufferbloatIncreaseMs": bufferbloatIncreaseMs,
       };
 
   factory HistoryEntry.fromJson(Map<String, dynamic> json) => HistoryEntry(
@@ -72,5 +82,7 @@ class HistoryEntry {
           (v) => v.name == json["verdict"],
           orElse: () => DiagnosisVerdict.inconclusive,
         ),
+        bufferbloatGrade: json["bufferbloatGrade"] as String?,
+        bufferbloatIncreaseMs: (json["bufferbloatIncreaseMs"] as num?)?.toDouble(),
       );
 }

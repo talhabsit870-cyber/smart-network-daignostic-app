@@ -152,6 +152,7 @@ class _HomeScreenState extends State<HomeScreen>
       upload: upload,
       securityLabel: security['label'] as String,
       diagnosis: diagnosis,
+      bufferbloat: bufferbloat,
     ));
 
     if (!mounted) return;
