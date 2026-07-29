@@ -35,8 +35,21 @@ is `com.example.smart_network_diagnostic`.
     - `testPingDetailed()` — several probes against a reachable host,
       returns `PingStats` (sent/received/rtts, exposing loss %, min/avg/max,
       jitter).
-    - `testDownloadSpeed()` / `testUploadSpeed()` — real GET/POST transfers,
-      return `SpeedResult` (success, mbps, bytes, seconds, source/error).
+    - `testDownloadSpeed()` / `testUploadSpeed()` — real GET/POST transfers
+      over `streams` (default 4) concurrent connections, summed against a
+      shared clock, since a single TCP stream caps out well below what fast
+      links can deliver. Return `SpeedResult` (success, mbps, bytes, seconds,
+      source/error).
+    - `testBufferbloat({required idlePing})` — saturates the link with
+      concurrent download streams while pinging, and compares that loaded
+      latency (median RTT, not mean — the ping probes share an isolate with
+      the saturation downloads) against `idlePing` (reused from the
+      just-finished ping phase rather than re-measured). Returns
+      `BufferbloatResult` (idleMs/loadedMs/increaseMs, and a Waveform-style
+      A+–F `grade`). Attached to `NetworkSnapshot.bufferbloat` on solo runs
+      only (not the Wi-Fi/mobile compare flow); deliberately kept out of
+      `DiagnosisEngine`'s verdict/blame logic — it surfaces as its own report
+      tile, not another ISP/router signal.
     - `testPublicIpInfo()` — public IP + ISP/city/country via `ipwho.is`
       (no key, CORS-enabled); falls back to `api.ipify.org` (IP only) if
       `ipwho.is` is unreachable or rate-limited, so a single provider outage
@@ -77,11 +90,19 @@ is `com.example.smart_network_diagnostic`.
     (`'wifi_native_stub.dart' if (dart.library.io) 'wifi_native_io.dart'`).
 - `lib/history/` — diagnostic history.
   - `history_entry.dart` — `HistoryEntry`, a compact JSON-serializable
-    summary of one run.
+    summary of one run, including an optional bufferbloat grade/increase
+    (nullable so old persisted entries without those fields still parse).
   - `history_store.dart` — `HistoryStore` persists a capped (50) list to
     `shared_preferences` under key `diagnostic_history`.
   - `history_screen.dart` — `HistoryScreen` lists past runs newest-first
-    with a clear-history action.
+    with a clear-history action, and — once there are 2+ entries — a
+    `TrendChart` above the list.
+  - `trend_chart.dart` — `TrendChart`, a small `CustomPainter` line chart of
+    download/upload Mbps across past runs (oldest-first; the newest-first
+    `HistoryStore` order is reversed before it's handed in). Only solo runs
+    ever reach history (`HomeScreen._finishCompare` never calls
+    `HistoryStore.add`), so the series is a single unbroken run of solo
+    scans, not split by connection type.
 - `lib/result/` — the diagnostic report, rendered inline on `HomeScreen`.
   - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
     collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`
@@ -92,9 +113,10 @@ is `com.example.smart_network_diagnostic`.
     body's "Download PDF" button builds a PDF via `report_pdf.dart` and
     hands it to `package:printing`'s share/save sheet.
   - `report_pdf.dart` — `buildReportPdf()`, renders the same data as
-    `ReportCard` through `package:pdf`'s widget set (`pw.*`) into PDF bytes.
-    Kept independent of `ReportCard`'s private Flutter-widget formatting
-    helpers since it's a different widget tree entirely.
+    `ReportCard` through `package:pdf`'s widget set (`pw.*`) into PDF bytes,
+    including the bufferbloat grade on solo runs. Kept independent of
+    `ReportCard`'s private Flutter-widget formatting helpers since it's a
+    different widget tree entirely.
   - `signal_path.dart` — `SignalPath`, the per-hop fault-chain
     visualization widget.
   - `speed_gauge.dart` — `SpeedGauge`, the needle gauge widget (used twice
