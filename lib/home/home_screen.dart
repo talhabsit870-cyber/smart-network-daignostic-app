@@ -336,27 +336,16 @@ class _HomeScreenState extends State<HomeScreen>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildTopBar(),
-                          const SizedBox(height: 12),
-                          _buildConnectionBadge(),
-                          const SizedBox(height: 20),
-                          _buildGaugeRow(),
-                          const SizedBox(height: 12),
-                          Text(
-                            _phaseLabel,
-                            style: const TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 13,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 16),
+                          _buildLivePanel(),
+                          const SizedBox(height: 16),
                           _buildWave(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 20),
                           PrimaryCtaButton(
                             label: _isDiagnosing ? "Testing..." : "Start Test",
                             onPressed: busy ? null : _startDiagnosis,
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           SecondaryCtaButton(
                             icon: Icons.compare_arrows,
                             label: _isComparing
@@ -364,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 : "Compare Wi-Fi vs Mobile",
                             onPressed: busy ? null : _startCompare,
                           ),
-                          const SizedBox(height: 24),
+                          if (_diagnosis != null) const SizedBox(height: 20),
                           ReportCard(
                             timestamp: _resultTimestamp,
                             diagnosisContext: _diagnosisContext,
@@ -428,11 +417,43 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  /// Groups the connection badge, both gauges, and the phase label into a
+  /// single bordered panel — one "live status" module instead of loose
+  /// elements floating on the background.
+  Widget _buildLivePanel() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.surfaceBorder),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildConnectionBadge(),
+          const SizedBox(height: 18),
+          _buildGaugeRow(),
+          const SizedBox(height: 14),
+          Text(
+            _phaseLabel,
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildConnectionBadge() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.surfaceBorder),
       ),
@@ -452,25 +473,33 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildGaugeRow() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final gaugeSize = (constraints.maxWidth * 0.34).clamp(120.0, 160.0);
+        final gaugeSize = (constraints.maxWidth * 0.32).clamp(110.0, 150.0);
         return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildGaugeCard(
-              label: 'Download',
-              size: gaugeSize,
-              controller: _needleController,
-              value: _speedValue,
-              maxValue: 100,
-              color: AppColors.accentPrimaryGlow,
+            Expanded(
+              child: _buildGaugeCard(
+                label: 'Download',
+                size: gaugeSize,
+                controller: _needleController,
+                value: _speedValue,
+                maxValue: 100,
+                color: AppColors.accentPrimaryGlow,
+              ),
             ),
-            _buildGaugeCard(
-              label: 'Upload',
-              size: gaugeSize,
-              controller: _uploadNeedleController,
-              value: _uploadValue,
-              maxValue: 40,
-              color: AppColors.accentSecondary,
+            SizedBox(
+              height: gaugeSize * 0.8,
+              child: const VerticalDivider(
+                  color: AppColors.surfaceBorder, width: 1, thickness: 1),
+            ),
+            Expanded(
+              child: _buildGaugeCard(
+                label: 'Upload',
+                size: gaugeSize,
+                controller: _uploadNeedleController,
+                value: _uploadValue,
+                maxValue: 40,
+                color: AppColors.accentSecondary,
+              ),
             ),
           ],
         );

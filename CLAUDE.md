@@ -85,7 +85,7 @@ is `com.example.smart_network_diagnostic`.
 - `lib/result/` — the diagnostic report, rendered inline on `HomeScreen`.
   - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
     collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`
-    or a compare pair; shows a placeholder until the first run completes.
+    or a compare pair; renders nothing until the first run completes.
     Replaced the old pushed `ResultScreen` page.
   - `signal_path.dart` — `SignalPath`, the per-hop fault-chain
     visualization widget.
@@ -93,8 +93,7 @@ is `com.example.smart_network_diagnostic`.
     on `HomeScreen`, for download and upload).
 - `test/widget_test.dart` — targets `HomeScreen` (via `MyApp` from
   `lib/app.dart`); assertions match the idle UI text (`Download`, `Upload`
-  gauge labels, `Ready to test`, `Start Test`, `Compare Wi-Fi vs Mobile`,
-  and the `ReportCard` placeholder string).
+  gauge labels, `Ready to test`, `Start Test`, `Compare Wi-Fi vs Mobile`).
 - `ScanGuard/PasswordVault/180634937/` — an empty, unexplained directory
   unrelated to the Flutter app (numeric name, no file extension, dated
   2025-07-14). Not referenced by any Dart code. Leave it alone unless the user
