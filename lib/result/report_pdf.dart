@@ -332,7 +332,7 @@ pw.Widget _detailsCard(NetworkSnapshot primary, IpInfoResult? ipInfo) {
   final ping = primary.ping;
   final device = primary.deviceStatus;
   final rows = <(String, String)>[
-    if (ping.received > 0) ('Ping range', '${ping.minMs}–${ping.maxMs} ms'),
+    if (ping.received > 0) ('Ping range', '${ping.minMs}-${ping.maxMs} ms'),
     if (ping.jitterMs != null) ('Jitter', '${ping.jitterMs!.toStringAsFixed(0)} ms'),
     if (ipInfo != null && ipInfo.success && ipInfo.ip != null) ('Public IP', ipInfo.ip!),
     if (ipInfo != null && ipInfo.success && ipInfo.isp != null) ('ISP', ipInfo.isp!),
