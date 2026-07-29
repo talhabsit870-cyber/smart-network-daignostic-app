@@ -5,6 +5,7 @@ import '../core/theme.dart' show AppColors;
 import '../diagnosis/diagnosis_engine.dart';
 import 'history_entry.dart';
 import 'history_store.dart';
+import 'trend_chart.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -89,9 +90,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
           return AppBody(
             child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: entries.length,
+            itemCount: entries.length + (entries.length >= 2 ? 1 : 0),
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
+              if (entries.length >= 2) {
+                if (index == 0) {
+                  return TrendChart(entries: entries.reversed.toList());
+                }
+                index -= 1;
+              }
               final e = entries[index];
               final verdictColor = _verdictColor(e.verdict);
               // A Border can't mix per-side colors with a borderRadius
