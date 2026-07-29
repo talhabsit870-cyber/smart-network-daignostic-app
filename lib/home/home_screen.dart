@@ -492,7 +492,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildGaugeRow() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final gaugeSize = (constraints.maxWidth * 0.32).clamp(110.0, 150.0);
+        final gaugeSize = (constraints.maxWidth * 0.42).clamp(150.0, 190.0);
         return Row(
           children: [
             Expanded(

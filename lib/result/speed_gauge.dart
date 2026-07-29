@@ -80,7 +80,7 @@ class _SpeedGaugePainter extends CustomPainter {
 
   _SpeedGaugePainter({required this.value, required this.maxValue});
 
-  static const _ticks = [0, 1, 5, 10, 20, 30, 50, 75, 100];
+  static const _ticks = [0, 5, 10, 25, 50, 75, 100];
   static const _startAngle = math.pi * 0.75; // 135°
   static const _sweepAngle = math.pi * 1.5; // 270°
   static const _majorTicks = {0, 50, 100};
@@ -88,7 +88,7 @@ class _SpeedGaugePainter extends CustomPainter {
   // Both the tick marks and the needle/fill derive their angle from the
   // same linear percent-of-[maxValue] mapping, so a tick and the needle
   // always agree on where a given value sits. Ticks are stored as
-  // percentages of [maxValue] (so a fixed 0/1/5/10/…/100 spread can be
+  // percentages of [maxValue] (so a fixed 0/5/10/25/50/75/100 spread can be
   // reused for every scale) — their non-uniform spacing (dense at the low
   // end, sparse at the high end) falls out naturally from the angle being
   // proportional to value, not from any special-cased tick layout. The
