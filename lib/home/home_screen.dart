@@ -85,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen>
     final download = await NetworkTester.testDownloadSpeed();
     final upload = await NetworkTester.testUploadSpeed();
     final ping = await NetworkTester.testPingDetailed();
+    final pathCheck = await NetworkTester.testNetworkPath();
     final connectivity = await Connectivity().checkConnectivity();
     final deviceStatus = await DeviceStatus.capture();
     return NetworkSnapshot(
@@ -93,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen>
       download: download,
       upload: upload,
       deviceStatus: deviceStatus,
+      pathCheck: pathCheck,
     );
   }
 
@@ -126,9 +128,14 @@ class _HomeScreenState extends State<HomeScreen>
     if (mounted) setState(() => _phaseLabel = "Testing latency under load…");
 
     final bufferbloat = await NetworkTester.testBufferbloat(idlePing: ping);
-    if (mounted) setState(() => _phaseLabel = "Checking security & diagnosing…");
+    if (mounted) setState(() => _phaseLabel = "Checking security…");
 
     final security = await SecurityCheck().scanWiFiSecurity();
+    if (mounted) setState(() => _phaseLabel = "Checking path…");
+
+    final pathCheck = await NetworkTester.testNetworkPath();
+    if (mounted) setState(() => _phaseLabel = "Diagnosing…");
+
     final ipInfo = await NetworkTester.testPublicIpInfo();
     final deviceStatus = await DeviceStatus.capture();
     final connectivity = await Connectivity().checkConnectivity();
@@ -141,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen>
       upload: upload,
       deviceStatus: deviceStatus,
       bufferbloat: bufferbloat,
+      pathCheck: pathCheck,
     );
 
     final diagnosis = DiagnosisEngine.evaluateSingle(snapshot);
@@ -153,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen>
       securityLabel: security['label'] as String,
       diagnosis: diagnosis,
       bufferbloat: bufferbloat,
+      pathCheck: pathCheck,
     ));
 
     if (!mounted) return;

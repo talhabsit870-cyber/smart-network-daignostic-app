@@ -15,6 +15,7 @@ class HistoryEntry {
   final DiagnosisVerdict verdict;
   final String? bufferbloatGrade;
   final double? bufferbloatIncreaseMs;
+  final String? pathCheckSummary;
 
   const HistoryEntry({
     required this.timestamp,
@@ -28,6 +29,7 @@ class HistoryEntry {
     required this.verdict,
     this.bufferbloatGrade,
     this.bufferbloatIncreaseMs,
+    this.pathCheckSummary,
   });
 
   factory HistoryEntry.fromRun({
@@ -38,6 +40,7 @@ class HistoryEntry {
     required String securityLabel,
     required DiagnosisResult diagnosis,
     BufferbloatResult? bufferbloat,
+    PathCheckResult? pathCheck,
   }) {
     return HistoryEntry(
       timestamp: DateTime.now(),
@@ -52,6 +55,7 @@ class HistoryEntry {
       bufferbloatGrade: bufferbloat?.success == true ? bufferbloat!.grade : null,
       bufferbloatIncreaseMs:
           bufferbloat?.success == true ? bufferbloat!.increaseMs : null,
+      pathCheckSummary: pathCheck?.success == true ? pathCheck!.summary : null,
     );
   }
 
@@ -67,6 +71,7 @@ class HistoryEntry {
         "verdict": verdict.name,
         "bufferbloatGrade": bufferbloatGrade,
         "bufferbloatIncreaseMs": bufferbloatIncreaseMs,
+        "pathCheckSummary": pathCheckSummary,
       };
 
   factory HistoryEntry.fromJson(Map<String, dynamic> json) => HistoryEntry(
@@ -84,5 +89,6 @@ class HistoryEntry {
         ),
         bufferbloatGrade: json["bufferbloatGrade"] as String?,
         bufferbloatIncreaseMs: (json["bufferbloatIncreaseMs"] as num?)?.toDouble(),
+        pathCheckSummary: json["pathCheckSummary"] as String?,
       );
 }

@@ -45,6 +45,8 @@ class ReportCard extends StatelessWidget {
 
   bool get isCompare => secondary != null;
 
+  bool get _hasPathCheck => primary?.pathCheck != null || secondary?.pathCheck != null;
+
   @override
   Widget build(BuildContext context) {
     final diagnosis = this.diagnosis;
@@ -152,6 +154,12 @@ class ReportCard extends StatelessWidget {
                   _sectionLabel('Details'),
                   const SizedBox(height: 8),
                   _buildDetailsGrid(primary),
+                  if (_hasPathCheck) ...[
+                    const SizedBox(height: 16),
+                    _sectionLabel('Path Check'),
+                    const SizedBox(height: 8),
+                    _buildPathCheckSection(),
+                  ],
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -511,6 +519,114 @@ class ReportCard extends StatelessWidget {
       ),
     );
   }
+
+  // ── Path check ───────────────────────────────────────────────────
+
+  Widget _buildPathCheckSection() {
+    if (!isCompare) {
+      final path = primary!.pathCheck;
+      if (path == null) return const SizedBox.shrink();
+      return _pathCheckCard(path);
+    }
+
+    final primaryPath = primary!.pathCheck;
+    final secondaryPath = secondary!.pathCheck;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (primaryPath != null) ...[
+          _pathCheckLabel(primary!.connectionLabel),
+          const SizedBox(height: 6),
+          _pathCheckCard(primaryPath),
+        ],
+        if (primaryPath != null && secondaryPath != null)
+          const SizedBox(height: 12),
+        if (secondaryPath != null) ...[
+          _pathCheckLabel(secondary!.connectionLabel),
+          const SizedBox(height: 6),
+          _pathCheckCard(secondaryPath),
+        ],
+      ],
+    );
+  }
+
+  Widget _pathCheckLabel(String connectionLabel) {
+    return Text(
+      connectionLabel,
+      style: const TextStyle(
+          color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 11),
+    );
+  }
+
+  Widget _pathCheckCard(PathCheckResult path) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceBorder),
+      ),
+      child: !path.success || path.hops.isEmpty
+          ? Text(
+              path.error ?? 'Path check unavailable',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (path.method == PathCheckMethod.approximatePath)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Approximate path check (3 points) — mobile devices '
+                      "can't run a real hop-by-hop traceroute.",
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 11, height: 1.3),
+                    ),
+                  ),
+                for (final hop in path.hops.take(12)) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 22,
+                          child: Text('${hop.hopNumber}',
+                              style: const TextStyle(
+                                  color: AppColors.textMuted, fontSize: 11)),
+                        ),
+                        Expanded(
+                          child: Text(
+                            hop.label != null
+                                ? '${hop.label} · ${hop.address ?? 'no response'}'
+                                : (hop.address ?? 'unknown host'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 12),
+                          ),
+                        ),
+                        Text(
+                          hop.timedOut || hop.rttMs == null
+                              ? 'timed out'
+                              : '${hop.rttMs} ms',
+                          style: TextStyle(
+                              color: hop.timedOut || hop.rttMs == null
+                                  ? AppColors.textMuted
+                                  : _pathHopColor(hop.rttMs!),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (hop != path.hops.take(12).last)
+                    const Divider(color: AppColors.surfaceBorder, height: 1),
+                ],
+              ],
+            ),
+    );
+  }
 }
 
 // ── Formatting helpers ────────────────────────────────────────────
@@ -575,6 +691,12 @@ Color _bufferbloatColor(BufferbloatResult? b) {
     default:
       return AppColors.coral;
   }
+}
+
+Color _pathHopColor(int rttMs) {
+  if (rttMs >= 150) return AppColors.coral;
+  if (rttMs >= 60) return AppColors.amber;
+  return AppColors.green;
 }
 
 Color _verdictColor(DiagnosisVerdict verdict) {

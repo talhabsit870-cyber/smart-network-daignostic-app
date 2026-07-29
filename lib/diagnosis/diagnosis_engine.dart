@@ -37,6 +37,7 @@ class NetworkSnapshot {
   final SpeedResult upload;
   final DeviceStatus? deviceStatus;
   final BufferbloatResult? bufferbloat;
+  final PathCheckResult? pathCheck;
 
   const NetworkSnapshot({
     required this.connectionLabel,
@@ -45,6 +46,7 @@ class NetworkSnapshot {
     required this.upload,
     this.deviceStatus,
     this.bufferbloat,
+    this.pathCheck,
   });
 
   bool get isSlow =>
@@ -65,9 +67,18 @@ class DiagnosisEngine {
     return 'Unknown';
   }
 
-  /// Single-run heuristic. Enough signal to flag a problem, not enough to
-  /// pin the blame on ISP vs router — that needs [compare].
+  /// Single-run heuristic, strengthened with hop-level evidence from
+  /// [NetworkSnapshot.pathCheck] when available. The base heuristic
+  /// ([_evaluateBase]) is unchanged from before the path check existed;
+  /// [_applyPathCheck] only adds evidence on top of it.
   static DiagnosisResult evaluateSingle(NetworkSnapshot snapshot) {
+    final base = _evaluateBase(snapshot);
+    return _applyPathCheck(base, snapshot.pathCheck);
+  }
+
+  /// Enough signal to flag a problem, not enough to pin the blame on ISP vs
+  /// router — that needs [compare].
+  static DiagnosisResult _evaluateBase(NetworkSnapshot snapshot) {
     final ping = snapshot.ping;
     final download = snapshot.download;
 
@@ -132,12 +143,109 @@ class DiagnosisEngine {
     );
   }
 
-  /// Compares a Wi-Fi run and a Mobile Data run and assigns blame per the
-  /// classic ISP/Router/Device rule table:
+  /// Additive-only: strengthens (or, in the gateway/inconclusive case,
+  /// upgrades) [base] using hop-level evidence from [pathCheck]. Returns
+  /// [base] verbatim when there's no usable path data, so existing
+  /// behavior is unchanged whenever a path check wasn't run or failed.
+  static DiagnosisResult _applyPathCheck(
+      DiagnosisResult base, PathCheckResult? pathCheck) {
+    if (pathCheck == null || !pathCheck.success || pathCheck.hops.isEmpty) {
+      return base;
+    }
+
+    final hops = pathCheck.hops;
+    final target = hops.last;
+    final gatewayHops = pathCheck.method == PathCheckMethod.approximatePath
+        ? hops.where((h) => h.label == 'Gateway')
+        : hops.where((h) => h.hopNumber <= 2);
+    final midHops =
+        hops.where((h) => h != target && !gatewayHops.contains(h));
+
+    int? minRtt(Iterable<PathHop> list) {
+      final rtts = list
+          .where((h) => !h.timedOut && h.rttMs != null)
+          .map((h) => h.rttMs!)
+          .toList();
+      return rtts.isEmpty ? null : rtts.reduce((a, b) => a < b ? a : b);
+    }
+
+    final gatewayRtt = minRtt(gatewayHops);
+    final midRtt = minRtt(midHops);
+    final targetRtt = target.timedOut ? null : target.rttMs;
+
+    const slowThresholdMs = 150;
+    final earlyHopsClean =
+        (gatewayRtt == null || gatewayRtt < slowThresholdMs) &&
+            (midRtt == null || midRtt < slowThresholdMs);
+
+    // Only the final hop is slow/unresponsive, everything before it is
+    // clean -> likely the target server, not the user's network.
+    if (earlyHopsClean &&
+        (target.timedOut ||
+            (targetRtt != null && targetRtt >= slowThresholdMs))) {
+      return DiagnosisResult(
+        verdict: base.verdict,
+        title: base.title,
+        detail: '${base.detail} Path check: the rest of the path responded '
+            'quickly and only the final hop was slow — likely the target '
+            'server, not your network.',
+        recommendation: base.recommendation,
+      );
+    }
+
+    // Latency starts right at the gateway -> local Wi-Fi/router signal.
+    if (gatewayRtt != null && gatewayRtt >= slowThresholdMs) {
+      final dominant = targetRtt == null || gatewayRtt >= targetRtt * 0.7;
+      if (base.verdict == DiagnosisVerdict.inconclusive && dominant) {
+        return DiagnosisResult(
+          verdict: DiagnosisVerdict.routerIssue,
+          title: 'Router issue',
+          detail: '${base.detail} Path check: latency starts right at your '
+              'gateway (${gatewayRtt}ms), pointing to your router/Wi-Fi '
+              'rather than your ISP.',
+          recommendation: 'Restart your router, move closer to it, or check '
+              'for interference.',
+        );
+      }
+      return DiagnosisResult(
+        verdict: base.verdict,
+        title: base.title,
+        detail: '${base.detail} Path check: latency starts right at your '
+            'gateway (${gatewayRtt}ms), which points toward your '
+            'router/Wi-Fi.',
+        recommendation: base.recommendation,
+      );
+    }
+
+    // Latency appears mid-path with a clean gateway -> ISP/upstream signal.
+    if (midRtt != null && midRtt >= slowThresholdMs) {
+      return DiagnosisResult(
+        verdict: base.verdict,
+        title: base.title,
+        detail: '${base.detail} Path check: latency appears mid-path '
+            '(${midRtt}ms), suggesting ISP/upstream congestion rather than '
+            'your local network.',
+        recommendation: base.recommendation,
+      );
+    }
+
+    return base;
+  }
+
+  /// Compares a Wi-Fi run and a Mobile Data run, then appends a note-only
+  /// comparison of each side's path-check target latency when both runs
+  /// have one — see [_appendPathCompareNote]. Never changes the verdict
+  /// [_compareBase] already produced.
+  static DiagnosisResult compare(NetworkSnapshot a, NetworkSnapshot b) {
+    final base = _compareBase(a, b);
+    return _appendPathCompareNote(base, a, b);
+  }
+
+  /// Assigns blame per the classic ISP/Router/Device rule table:
   /// Wi-Fi slow + Mobile fast -> router issue.
   /// Both slow -> ISP issue.
   /// Mobile slow + Wi-Fi fast -> mobile network issue.
-  static DiagnosisResult compare(NetworkSnapshot a, NetworkSnapshot b) {
+  static DiagnosisResult _compareBase(NetworkSnapshot a, NetworkSnapshot b) {
     final wifi = a.connectionLabel == 'Wi-Fi'
         ? a
         : (b.connectionLabel == 'Wi-Fi' ? b : null);
@@ -206,6 +314,53 @@ class DiagnosisEngine {
       detail: 'Wi-Fi (${wifi.download.mbps.toStringAsFixed(1)} Mbps) and mobile data '
           '(${mobile.download.mbps.toStringAsFixed(1)} Mbps) both perform within normal range.',
       recommendation: 'No action needed.',
+    );
+  }
+
+  /// Note-only: if both the Wi-Fi and Mobile Data runs have a successful
+  /// path check, mentions whichever side's path to the target showed higher
+  /// latency. Returns [base] unchanged whenever that data isn't available,
+  /// so this can never affect the verdict [_compareBase] already assigned.
+  static DiagnosisResult _appendPathCompareNote(
+      DiagnosisResult base, NetworkSnapshot a, NetworkSnapshot b) {
+    final wifi = a.connectionLabel == 'Wi-Fi'
+        ? a
+        : (b.connectionLabel == 'Wi-Fi' ? b : null);
+    final mobile = a.connectionLabel == 'Mobile Data'
+        ? a
+        : (b.connectionLabel == 'Mobile Data' ? b : null);
+    final wifiPath = wifi?.pathCheck;
+    final mobilePath = mobile?.pathCheck;
+    if (wifiPath == null ||
+        mobilePath == null ||
+        !wifiPath.success ||
+        !mobilePath.success ||
+        wifiPath.hops.isEmpty ||
+        mobilePath.hops.isEmpty) {
+      return base;
+    }
+
+    int? targetRtt(PathCheckResult p) {
+      final last = p.hops.last;
+      return last.timedOut ? null : last.rttMs;
+    }
+
+    final wifiTargetRtt = targetRtt(wifiPath);
+    final mobileTargetRtt = targetRtt(mobilePath);
+    if (wifiTargetRtt == null || mobileTargetRtt == null) return base;
+
+    final worseSide = wifiTargetRtt > mobileTargetRtt
+        ? 'Wi-Fi'
+        : (mobileTargetRtt > wifiTargetRtt ? 'Mobile Data' : null);
+    if (worseSide == null) return base;
+
+    return DiagnosisResult(
+      verdict: base.verdict,
+      title: base.title,
+      detail: '${base.detail} Path check: $worseSide\'s path to the target '
+          'showed higher end-to-end latency (Wi-Fi ${wifiTargetRtt}ms vs '
+          'Mobile Data ${mobileTargetRtt}ms).',
+      recommendation: base.recommendation,
     );
   }
 }

@@ -4,6 +4,11 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'path_check_result.dart';
+import 'path_probe_stub.dart' if (dart.library.io) 'path_probe_io.dart';
+
+export 'path_check_result.dart';
+
 /// Result of a batch of latency probes against a single host: how many
 /// were sent, how many came back, and the round-trip time of each success —
 /// from which loss %, min/avg/max latency and jitter are all derived.
@@ -519,6 +524,14 @@ class NetworkTester {
     } catch (_) {
       return IpInfoResult.failed('Could not reach IP lookup service');
     }
+  }
+
+  /// Path/hop check to [host] (defaults to the ping target). Dispatches to a
+  /// real `tracert`/`traceroute` on desktop, a 3-point TCP-connect
+  /// approximation on mobile, or `unavailable` on web — see `PathProbe`.
+  /// Never throws: every platform branch traps its own errors.
+  static Future<PathCheckResult> testNetworkPath({String? host}) {
+    return PathProbe.run(host ?? _primaryPingHost.host);
   }
 
   static Uint8List _randomPayload(int bytes) {
