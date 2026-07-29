@@ -93,6 +93,13 @@ class _SpeedGaugePainter extends CustomPainter {
   // bracket's two (evenly-spaced) tick angles, so the needle still lands
   // proportionally between its neighboring ticks — just like a real analog
   // meter with a non-uniform scale but uniform mark spacing.
+  // Ticks are stored as percentages of [maxValue] (so a fixed 0/1/5/10/…/100
+  // spread can be reused for every scale). The dial must label each mark
+  // with its actual scaled value, not that raw percentage, or a gauge with
+  // maxValue != 100 (e.g. the upload dial) prints the wrong numbers.
+  static String _tickLabel(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
   double _angleForTickIndex(int i) =>
       _startAngle + _sweepAngle * i / (_ticks.length - 1);
 
@@ -221,7 +228,7 @@ class _SpeedGaugePainter extends CustomPainter {
       final angle = _angleForTickIndex(i);
       final tp = TextPainter(
         text: TextSpan(
-          text: '$tick',
+          text: _tickLabel(tick * maxValue / 100),
           style: TextStyle(
             color: isMajor ? AppColors.textPrimary : AppColors.textMuted,
             fontSize: shortest * (isMajor ? 0.05 : 0.045),
