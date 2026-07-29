@@ -80,36 +80,38 @@ Future<Uint8List> buildReportPdf({
   );
 
   doc.addPage(
-    pw.Page(
+    pw.MultiPage(
       pageTheme: pageTheme,
-      build: (context) => pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          _header(diagnosisContext, timestamp),
-          pw.SizedBox(height: 16),
-          pw.Row(children: [
-            pw.Expanded(
-                child: pw.Container(height: 3, color: _Palette.accentPrimary)),
-            pw.Expanded(
-                child:
-                    pw.Container(height: 3, color: _Palette.accentSecondary)),
-          ]),
-          pw.SizedBox(height: 20),
-          _verdictBanner(diagnosis, verdictColor),
-          pw.SizedBox(height: 12),
-          _recommendationCallout(diagnosis.recommendation),
-          pw.SizedBox(height: 22),
-          _sectionLabel('Metrics'),
+      build: (context) => [
+        _header(diagnosisContext, timestamp),
+        pw.SizedBox(height: 16),
+        pw.Row(children: [
+          pw.Expanded(
+              child: pw.Container(height: 3, color: _Palette.accentPrimary)),
+          pw.Expanded(
+              child: pw.Container(height: 3, color: _Palette.accentSecondary)),
+        ]),
+        pw.SizedBox(height: 20),
+        _verdictBanner(diagnosis, verdictColor),
+        pw.SizedBox(height: 12),
+        _recommendationCallout(diagnosis.recommendation),
+        pw.SizedBox(height: 22),
+        _sectionLabel('Metrics'),
+        pw.SizedBox(height: 8),
+        isCompare
+            ? _compareCard(primary, secondary)
+            : _soloCard(primary, security),
+        pw.SizedBox(height: 22),
+        _sectionLabel('Details'),
+        pw.SizedBox(height: 8),
+        _detailsCard(primary, ipInfo),
+        if (primary.pathCheck != null || secondary?.pathCheck != null) ...[
+          pw.NewPage(),
+          _sectionLabel('Path Check'),
           pw.SizedBox(height: 8),
-          isCompare
-              ? _compareCard(primary, secondary)
-              : _soloCard(primary, security),
-          pw.SizedBox(height: 22),
-          _sectionLabel('Details'),
-          pw.SizedBox(height: 8),
-          _detailsCard(primary, ipInfo),
+          _pathCheckSection(primary, secondary),
         ],
-      ),
+      ],
     ),
   );
 
@@ -263,6 +265,8 @@ pw.Widget _soloCard(NetworkSnapshot primary, Map<String, dynamic>? security) {
     if (primary.bufferbloat?.success == true)
       _metricRow('Bufferbloat', primary.bufferbloat!.grade,
           _bufferbloatColor(primary.bufferbloat!)),
+    if (primary.pathCheck?.success == true)
+      _metricRow('Path check', primary.pathCheck!.summary, _Palette.textPrimary),
     _metricRow('Security', securityLabel, securityColor, last: true),
   ]);
 }
@@ -357,6 +361,117 @@ pw.Widget _detailsCard(NetworkSnapshot primary, IpInfoResult? ipInfo) {
     for (var i = 0; i < rows.length; i++)
       _metricRow(rows[i].$1, rows[i].$2, _Palette.textPrimary, last: i == rows.length - 1),
   ]);
+}
+
+// ── Path check ───────────────────────────────────────────────────
+
+pw.Widget _pathCheckSection(NetworkSnapshot primary, NetworkSnapshot? secondary) {
+  if (secondary == null) {
+    final path = primary.pathCheck;
+    return path == null ? pw.SizedBox.shrink() : _pathCheckCard(path);
+  }
+
+  final primaryPath = primary.pathCheck;
+  final secondaryPath = secondary.pathCheck;
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      if (primaryPath != null)
+        pw.Expanded(
+            child: _labeledPathCard(primary.connectionLabel, primaryPath)),
+      if (primaryPath != null && secondaryPath != null) pw.SizedBox(width: 12),
+      if (secondaryPath != null)
+        pw.Expanded(
+            child: _labeledPathCard(secondary.connectionLabel, secondaryPath)),
+    ],
+  );
+}
+
+pw.Widget _labeledPathCard(String connectionLabel, PathCheckResult path) {
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(connectionLabel.toUpperCase(),
+          style: pw.TextStyle(
+              fontSize: 8,
+              color: _Palette.accentPrimaryGlow,
+              letterSpacing: 1.2,
+              fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 4),
+      _pathCheckCard(path),
+    ],
+  );
+}
+
+pw.Widget _pathCheckCard(PathCheckResult path) {
+  if (!path.success || path.hops.isEmpty) {
+    return _card([
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 10),
+        child: pw.Text(path.error ?? 'Path check unavailable',
+            style: pw.TextStyle(fontSize: 10, color: _Palette.textMuted)),
+      ),
+    ]);
+  }
+
+  final hops = path.hops.take(12).toList();
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      if (path.method == PathCheckMethod.approximatePath)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 6),
+          child: pw.Text(
+            "Approximate path check (3 points) - mobile devices can't run "
+            'a real hop-by-hop traceroute.',
+            style: pw.TextStyle(fontSize: 9, color: _Palette.textMuted),
+          ),
+        ),
+      _card([
+        for (var i = 0; i < hops.length; i++)
+          _pathHopRow(hops[i], last: i == hops.length - 1),
+      ]),
+    ],
+  );
+}
+
+pw.Widget _pathHopRow(PathHop hop, {bool last = false}) {
+  final timedOut = hop.timedOut || hop.rttMs == null;
+  final label = hop.label != null
+      ? '${hop.label} - ${hop.address ?? 'no response'}'
+      : (hop.address ?? 'unknown host');
+  return pw.Column(children: [
+    pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 6),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(
+            width: 18,
+            child: pw.Text('${hop.hopNumber}',
+                style: pw.TextStyle(fontSize: 9.5, color: _Palette.textMuted)),
+          ),
+          pw.Expanded(
+            child: pw.Text(label,
+                style: pw.TextStyle(fontSize: 10, color: _Palette.textPrimary)),
+          ),
+          pw.Text(
+            timedOut ? 'timed out' : '${hop.rttMs} ms',
+            style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+                color: timedOut ? _Palette.textMuted : _pathHopColor(hop.rttMs!)),
+          ),
+        ],
+      ),
+    ),
+    if (!last) pw.Divider(color: _Palette.surfaceBorder, height: 1, thickness: 0.5),
+  ]);
+}
+
+PdfColor _pathHopColor(int rttMs) {
+  if (rttMs >= 150) return _Palette.coral;
+  if (rttMs >= 60) return _Palette.amber;
+  return _Palette.green;
 }
 
 String _formatTimestamp(DateTime? dt) {
