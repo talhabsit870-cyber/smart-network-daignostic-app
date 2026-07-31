@@ -338,6 +338,13 @@ pw.Widget _detailsCard(NetworkSnapshot primary, IpInfoResult? ipInfo) {
   final rows = <(String, String)>[
     if (ping.received > 0) ('Ping range', '${ping.minMs}-${ping.maxMs} ms'),
     if (ping.jitterMs != null) ('Jitter', '${ping.jitterMs!.toStringAsFixed(0)} ms'),
+    if (primary.bufferbloat?.success == true)
+      (
+        'Latency under load',
+        'Idle: ${primary.bufferbloat!.idleMs!.toStringAsFixed(0)} ms -> '
+            'Under load: ${primary.bufferbloat!.loadedMs!.toStringAsFixed(0)} ms '
+            '(+${primary.bufferbloat!.increaseMs!.toStringAsFixed(0)} ms)',
+      ),
     if (ipInfo != null && ipInfo.success && ipInfo.ip != null) ('Public IP', ipInfo.ip!),
     if (ipInfo != null && ipInfo.success && ipInfo.isp != null) ('ISP', ipInfo.isp!),
     if (ipInfo != null && ipInfo.success)

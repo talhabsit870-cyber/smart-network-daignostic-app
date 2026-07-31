@@ -456,31 +456,37 @@ class ReportCard extends StatelessWidget {
     final ping = primary.ping;
     final device = primary.deviceStatus;
     final ipInfo = this.ipInfo;
-    final rows = <(String, String)>[
-      if (ping.received > 0) ('Ping range', '${ping.minMs}–${ping.maxMs} ms'),
-      if (ping.jitterMs != null) ('Jitter', '${ping.jitterMs!.toStringAsFixed(0)} ms'),
+    final rows = <(String, String, Color?)>[
+      if (ping.received > 0) ('Ping range', '${ping.minMs}–${ping.maxMs} ms', null),
+      if (ping.jitterMs != null)
+        ('Jitter', '${ping.jitterMs!.toStringAsFixed(0)} ms', null),
       if (primary.bufferbloat?.success == true)
         (
           'Latency under load',
-          '${primary.bufferbloat!.loadedMs!.toStringAsFixed(0)} ms '
-              '(+${primary.bufferbloat!.increaseMs!.toStringAsFixed(0)} ms vs idle)',
+          'Idle: ${primary.bufferbloat!.idleMs!.toStringAsFixed(0)} ms → '
+              'Under load: ${primary.bufferbloat!.loadedMs!.toStringAsFixed(0)} ms '
+              '(+${primary.bufferbloat!.increaseMs!.toStringAsFixed(0)} ms)',
+          _bufferbloatColor(primary.bufferbloat),
         ),
       if (ipInfo != null && ipInfo.success && ipInfo.ip != null)
-        ('Public IP', ipInfo.ip!),
-      if (ipInfo != null && ipInfo.success && ipInfo.isp != null) ('ISP', ipInfo.isp!),
+        ('Public IP', ipInfo.ip!, null),
+      if (ipInfo != null && ipInfo.success && ipInfo.isp != null)
+        ('ISP', ipInfo.isp!, null),
       if (ipInfo != null && ipInfo.success)
         (
           'Location',
           [ipInfo.city, ipInfo.country].whereType<String>().join(', '),
+          null,
         ),
-      if (ipInfo != null && !ipInfo.success) ('IP lookup', 'Failed'),
-      if (device != null) ('Device', device.deviceLabel),
+      if (ipInfo != null && !ipInfo.success) ('IP lookup', 'Failed', null),
+      if (device != null) ('Device', device.deviceLabel, null),
       if (device?.batteryPercent != null)
         (
           'Battery',
           device!.isLowPowerMode == true
               ? '${device.batteryPercent}% · Low Power Mode'
               : '${device.batteryPercent}%',
+          null,
         ),
     ]..removeWhere((row) => row.$2.isEmpty);
     if (rows.isEmpty) return const SizedBox.shrink();
@@ -499,16 +505,21 @@ class ReportCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(row.$1,
                       style:
                           const TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                  Text(row.$2,
-                      style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(row.$2,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            color: row.$3 ?? AppColors.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                  ),
                 ],
               ),
             ),

@@ -111,10 +111,15 @@ is `com.example.smart_network_diagnostic`.
     calls `onClear` (wired to `HomeScreen._clearReport()`, which also resets
     the gauges) so a run can be dismissed without starting a new one. The
     body's "Download PDF" button builds a PDF via `report_pdf.dart` and
-    hands it to `package:printing`'s share/save sheet.
+    hands it to `package:printing`'s share/save sheet. The details grid's
+    "Latency under load" row spells out the raw idle/loaded/delta numbers
+    behind the bufferbloat grade badge (`BufferbloatResult.idleMs`/
+    `loadedMs`/`increaseMs`), colored by the same grade-derived
+    good/borderline/bad logic as the badge.
   - `report_pdf.dart` — `buildReportPdf()`, renders the same data as
     `ReportCard` through `package:pdf`'s widget set (`pw.*`) into PDF bytes,
-    including the bufferbloat grade on solo runs. Kept independent of
+    including the bufferbloat grade on solo runs plus the same raw
+    idle/loaded/delta numbers in the details card. Kept independent of
     `ReportCard`'s private Flutter-widget formatting helpers since it's a
     different widget tree entirely.
   - `signal_path.dart` — `SignalPath`, the per-hop fault-chain
