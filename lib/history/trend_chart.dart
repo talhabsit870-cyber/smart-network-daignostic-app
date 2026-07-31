@@ -43,6 +43,8 @@ class TrendChart extends StatelessWidget {
               _legendDot(AppColors.accentPrimaryGlow, 'Download'),
               const SizedBox(width: 14),
               _legendDot(AppColors.accentSecondary, 'Upload'),
+              const SizedBox(width: 14),
+              _legendDot(AppColors.amber, 'Loss'),
             ],
           ),
           const SizedBox(height: 12),
@@ -115,6 +117,20 @@ class _TrendPainter extends CustomPainter {
     drawLine(
         entries.map((e) => e.downloadMbps).toList(), AppColors.accentPrimaryGlow);
     drawLine(entries.map((e) => e.uploadMbps).toList(), AppColors.accentSecondary);
+
+    // Packet loss doesn't share the Mbps scale, so it's marked as small dots
+    // pinned to the bottom of the chart rather than plotted as a line.
+    for (var i = 0; i < entries.length; i++) {
+      final loss = entries[i].lossPercent;
+      if (loss <= 0) continue;
+      final x = size.width * i / (entries.length - 1);
+      final y = size.height - 4;
+      canvas.drawCircle(
+        Offset(x, y),
+        3,
+        Paint()..color = loss >= 20 ? AppColors.coral : AppColors.amber,
+      );
+    }
   }
 
   @override

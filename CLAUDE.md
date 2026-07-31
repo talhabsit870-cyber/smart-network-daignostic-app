@@ -99,10 +99,14 @@ is `com.example.smart_network_diagnostic`.
     `TrendChart` above the list.
   - `trend_chart.dart` — `TrendChart`, a small `CustomPainter` line chart of
     download/upload Mbps across past runs (oldest-first; the newest-first
-    `HistoryStore` order is reversed before it's handed in). Only solo runs
-    ever reach history (`HomeScreen._finishCompare` never calls
-    `HistoryStore.add`), so the series is a single unbroken run of solo
-    scans, not split by connection type.
+    `HistoryStore` order is reversed before it's handed in), plus a packet-loss
+    marker row: small dots pinned to the chart's bottom edge (not a shared
+    line — loss % and Mbps are different scales) at each run with nonzero
+    `HistoryEntry.lossPercent`, colored amber/coral by the same severity
+    threshold as `report_card.dart`'s ping tile. Only solo runs ever reach
+    history (`HomeScreen._finishCompare` never calls `HistoryStore.add`), so
+    the series is a single unbroken run of solo scans, not split by
+    connection type.
 - `lib/result/` — the diagnostic report, rendered inline on `HomeScreen`.
   - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
     collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`
