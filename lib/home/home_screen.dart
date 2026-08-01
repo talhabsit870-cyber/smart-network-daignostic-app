@@ -14,7 +14,15 @@ import '../network/network_tester.dart';
 import '../result/report_card.dart';
 import '../result/speed_gauge.dart';
 import '../security/security_check.dart';
+import '../settings/settings_sheet.dart';
+import '../settings/test_settings.dart';
 import 'wave_painter.dart';
+
+/// Duration used for the one-tap "Deep Test" mode, regardless of the user's
+/// saved test-duration setting — a stability-focused reading is the whole
+/// point of tapping it, so it always runs long.
+const _deepTestDuration = Duration(seconds: 45);
+const _deepTestBufferbloatLoadDuration = Duration(seconds: 15);
 
 /// The launcher screen: idle dial, connection badge, Start/Compare, and —
 /// once a run finishes — the full report ([ReportCard]) inline below,
@@ -43,6 +51,8 @@ class _HomeScreenState extends State<HomeScreen>
   DateTime? _resultTimestamp;
   String _diagnosisContext = '';
   bool _reportExpanded = false;
+  TestSettings _testSettings = const TestSettings();
+  bool _lastRunDeep = false;
 
   late final AnimationController _needleController;
   late final AnimationController _uploadNeedleController;
@@ -64,6 +74,19 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat();
     _refreshConnectionLabel();
+    _loadTestSettings();
+  }
+
+  Future<void> _loadTestSettings() async {
+    final settings = await TestSettingsStore.load();
+    if (mounted) setState(() => _testSettings = settings);
+  }
+
+  Future<void> _openTestSettings() async {
+    final updated = await showTestSettingsSheet(context, _testSettings);
+    if (updated == null) return;
+    await TestSettingsStore.save(updated);
+    if (mounted) setState(() => _testSettings = updated);
   }
 
   @override
@@ -82,8 +105,14 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<NetworkSnapshot> _captureSnapshot() async {
-    final download = await NetworkTester.testDownloadSpeed();
-    final upload = await NetworkTester.testUploadSpeed();
+    final download = await NetworkTester.testDownloadSpeed(
+      streams: _testSettings.streams,
+      duration: _testSettings.duration,
+    );
+    final upload = await NetworkTester.testUploadSpeed(
+      streams: _testSettings.streams,
+      duration: _testSettings.duration,
+    );
     final ping = await NetworkTester.testPingDetailed();
     final pathCheck = await NetworkTester.testNetworkPath();
     final connectivity = await Connectivity().checkConnectivity();
@@ -98,24 +127,33 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Future<void> _startDiagnosis() async {
+  Future<void> _startDiagnosis({bool deep = false}) async {
+    final duration = deep ? _deepTestDuration : _testSettings.duration;
+    final streams = _testSettings.streams;
+    // A Deep Test's download+upload phases alone take ~90s; without this,
+    // a phase label sitting still for that long reads as a hung app.
+    final durationHint = deep ? ' (~${duration.inSeconds}s)' : '';
+
     setState(() {
       _isDiagnosing = true;
+      _lastRunDeep = deep;
       _speedValue = 0;
       _uploadValue = 0;
-      _phaseLabel = "Testing download…";
+      _phaseLabel = "Testing download…$durationHint";
     });
 
-    final download = await NetworkTester.testDownloadSpeed();
+    final download =
+        await NetworkTester.testDownloadSpeed(streams: streams, duration: duration);
     if (mounted) {
       _needleController.forward(from: 0);
       setState(() {
         _speedValue = download.success ? download.mbps : 0;
-        _phaseLabel = "Testing upload…";
+        _phaseLabel = "Testing upload…$durationHint";
       });
     }
 
-    final upload = await NetworkTester.testUploadSpeed();
+    final upload =
+        await NetworkTester.testUploadSpeed(streams: streams, duration: duration);
     if (mounted) {
       _uploadNeedleController.forward(from: 0);
       setState(() {
@@ -127,7 +165,10 @@ class _HomeScreenState extends State<HomeScreen>
     final ping = await NetworkTester.testPingDetailed();
     if (mounted) setState(() => _phaseLabel = "Testing latency under load…");
 
-    final bufferbloat = await NetworkTester.testBufferbloat(idlePing: ping);
+    final bufferbloat = await NetworkTester.testBufferbloat(
+      idlePing: ping,
+      loadDuration: deep ? _deepTestBufferbloatLoadDuration : const Duration(seconds: 5),
+    );
     if (mounted) setState(() => _phaseLabel = "Checking security…");
 
     final security = await SecurityCheck().scanWiFiSecurity();
@@ -162,6 +203,7 @@ class _HomeScreenState extends State<HomeScreen>
       diagnosis: diagnosis,
       bufferbloat: bufferbloat,
       pathCheck: pathCheck,
+      isDeep: deep,
     ));
 
     if (!mounted) return;
@@ -252,6 +294,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _startCompare() async {
     setState(() {
       _isComparing = true;
+      _lastRunDeep = false;
       _speedValue = 0;
       _uploadValue = 0;
     });
@@ -323,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (_secondarySnapshot != null) {
       _startCompare();
     } else {
-      _startDiagnosis();
+      _startDiagnosis(deep: _lastRunDeep);
     }
   }
 
@@ -385,6 +428,14 @@ class _HomeScreenState extends State<HomeScreen>
                                 : "Compare Wi-Fi vs Mobile",
                             onPressed: busy ? null : _startCompare,
                           ),
+                          const SizedBox(height: 10),
+                          SecondaryCtaButton(
+                            icon: Icons.speed,
+                            label: _isDiagnosing && _lastRunDeep
+                                ? "Running Deep Test..."
+                                : "Deep Test (${_deepTestDuration.inSeconds}s)",
+                            onPressed: busy ? null : () => _startDiagnosis(deep: true),
+                          ),
                           if (_diagnosis != null) const SizedBox(height: 20),
                           ReportCard(
                             timestamp: _resultTimestamp,
@@ -432,19 +483,36 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ],
         ),
-        Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            shape: BoxShape.circle,
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.history,
-                color: AppColors.accentPrimaryGlow, size: 20),
-            tooltip: 'Scan history',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const HistoryScreen()),
+        Row(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                color: AppColors.surface,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.tune,
+                    color: AppColors.accentPrimaryGlow, size: 20),
+                tooltip: 'Test settings',
+                onPressed: busy ? null : _openTestSettings,
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Container(
+              decoration: const BoxDecoration(
+                color: AppColors.surface,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.history,
+                    color: AppColors.accentPrimaryGlow, size: 20),
+                tooltip: 'Scan history',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HistoryScreen()),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );

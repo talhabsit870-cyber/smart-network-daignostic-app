@@ -16,6 +16,7 @@ class HistoryEntry {
   final String? bufferbloatGrade;
   final double? bufferbloatIncreaseMs;
   final String? pathCheckSummary;
+  final bool isDeep;
 
   const HistoryEntry({
     required this.timestamp,
@@ -30,6 +31,7 @@ class HistoryEntry {
     this.bufferbloatGrade,
     this.bufferbloatIncreaseMs,
     this.pathCheckSummary,
+    this.isDeep = false,
   });
 
   factory HistoryEntry.fromRun({
@@ -41,6 +43,7 @@ class HistoryEntry {
     required DiagnosisResult diagnosis,
     BufferbloatResult? bufferbloat,
     PathCheckResult? pathCheck,
+    bool isDeep = false,
   }) {
     return HistoryEntry(
       timestamp: DateTime.now(),
@@ -56,6 +59,7 @@ class HistoryEntry {
       bufferbloatIncreaseMs:
           bufferbloat?.success == true ? bufferbloat!.increaseMs : null,
       pathCheckSummary: pathCheck?.success == true ? pathCheck!.summary : null,
+      isDeep: isDeep,
     );
   }
 
@@ -72,6 +76,7 @@ class HistoryEntry {
         "bufferbloatGrade": bufferbloatGrade,
         "bufferbloatIncreaseMs": bufferbloatIncreaseMs,
         "pathCheckSummary": pathCheckSummary,
+        "isDeep": isDeep,
       };
 
   factory HistoryEntry.fromJson(Map<String, dynamic> json) => HistoryEntry(
@@ -90,5 +95,6 @@ class HistoryEntry {
         bufferbloatGrade: json["bufferbloatGrade"] as String?,
         bufferbloatIncreaseMs: (json["bufferbloatIncreaseMs"] as num?)?.toDouble(),
         pathCheckSummary: json["pathCheckSummary"] as String?,
+        isDeep: json["isDeep"] as bool? ?? false,
       );
 }

@@ -3,6 +3,7 @@ import 'package:printing/printing.dart';
 
 import '../core/cta_button.dart';
 import '../core/theme.dart' show AppColors, connectionIcon;
+import '../diagnosis/activity_readiness.dart';
 import '../diagnosis/diagnosis_engine.dart';
 import '../network/network_tester.dart';
 import 'report_pdf.dart';
@@ -159,6 +160,12 @@ class ReportCard extends StatelessWidget {
                     _sectionLabel('Path Check'),
                     const SizedBox(height: 8),
                     _buildPathCheckSection(),
+                  ],
+                  if (!isCompare) ...[
+                    const SizedBox(height: 16),
+                    _sectionLabel('What Your Speed Supports'),
+                    const SizedBox(height: 8),
+                    _buildActivityReadinessSection(primary),
                   ],
                   const SizedBox(height: 16),
                   Row(
@@ -531,6 +538,58 @@ class ReportCard extends StatelessWidget {
     );
   }
 
+  // ── Activity readiness ───────────────────────────────────────────
+
+  Widget _buildActivityReadinessSection(NetworkSnapshot primary) {
+    final items = evaluateActivityReadiness(primary);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.surfaceBorder),
+      ),
+      child: Column(
+        children: [
+          for (final item in items) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(_readinessIcon(item.status),
+                      color: _readinessColor(item.status), size: 16),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.activity,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12)),
+                        const SizedBox(height: 2),
+                        Text(item.reason,
+                            style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                                height: 1.3)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (item != items.last)
+              const Divider(color: AppColors.surfaceBorder, height: 1),
+          ],
+        ],
+      ),
+    );
+  }
+
   // ── Path check ───────────────────────────────────────────────────
 
   Widget _buildPathCheckSection() {
@@ -701,6 +760,28 @@ Color _bufferbloatColor(BufferbloatResult? b) {
       return AppColors.amber;
     default:
       return AppColors.coral;
+  }
+}
+
+Color _readinessColor(ReadinessStatus status) {
+  switch (status) {
+    case ReadinessStatus.good:
+      return AppColors.green;
+    case ReadinessStatus.borderline:
+      return AppColors.amber;
+    case ReadinessStatus.poor:
+      return AppColors.coral;
+  }
+}
+
+IconData _readinessIcon(ReadinessStatus status) {
+  switch (status) {
+    case ReadinessStatus.good:
+      return Icons.check_circle_rounded;
+    case ReadinessStatus.borderline:
+      return Icons.warning_rounded;
+    case ReadinessStatus.poor:
+      return Icons.cancel_rounded;
   }
 }
 

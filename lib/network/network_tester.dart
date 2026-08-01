@@ -158,67 +158,84 @@ class NetworkTester {
       Uri.parse('https://api.ipify.org?format=json');
 
   /// Sends [attempts] probes against a single reachable host and reports
-  /// sent/received counts plus per-probe round-trip times.
+  /// sent/received counts plus per-probe round-trip times. All probes reuse
+  /// one [http.Client] (kept open for the whole sequence) instead of the
+  /// top-level `http.get`, which opens and tears down a brand-new TCP+TLS
+  /// connection per call — that connection setup cost was being counted as
+  /// "ping" and inflated every reading by a full handshake, not just actual
+  /// round-trip time.
   static Future<PingStats> testPingDetailed({int attempts = 6}) async {
-    final candidates = <MapEntry<Uri, Future<void> Function(Uri)>>[
-      MapEntry(_primaryPingHost,
-          (uri) => http.get(uri).timeout(const Duration(seconds: 3))),
-      MapEntry(_fallbackPingHost,
-          (uri) => http.get(uri).timeout(const Duration(seconds: 3))),
-    ];
+    final hosts = [_primaryPingHost, _fallbackPingHost];
 
-    Uri? host;
-    Future<void> Function(Uri)? probe;
-    final rtts = <int>[];
-    int sent = 0;
-    int received = 0;
+    final client = http.Client();
+    try {
+      Uri? host;
+      final rtts = <int>[];
+      int sent = 0;
+      int received = 0;
 
-    for (final candidate in candidates) {
-      sent++;
-      final stopwatch = Stopwatch()..start();
-      try {
-        await candidate.value(candidate.key);
-        stopwatch.stop();
-        host = candidate.key;
-        probe = candidate.value;
-        received++;
-        rtts.add(stopwatch.elapsedMilliseconds);
-        break;
-      } catch (_) {
-        stopwatch.stop();
+      for (final candidate in hosts) {
+        sent++;
+        final stopwatch = Stopwatch()..start();
+        try {
+          await client.get(candidate).timeout(const Duration(seconds: 3));
+          stopwatch.stop();
+          host = candidate;
+          received++;
+          rtts.add(stopwatch.elapsedMilliseconds);
+          break;
+        } catch (_) {
+          stopwatch.stop();
+        }
       }
-    }
 
-    if (host == null || probe == null) {
-      return PingStats.unreachable(sent);
-    }
-
-    for (int i = 1; i < attempts; i++) {
-      sent++;
-      final stopwatch = Stopwatch()..start();
-      try {
-        await probe(host);
-        stopwatch.stop();
-        received++;
-        rtts.add(stopwatch.elapsedMilliseconds);
-      } catch (_) {
-        stopwatch.stop();
+      if (host == null) {
+        return PingStats.unreachable(sent);
       }
-    }
 
-    return PingStats(host: host.host, sent: sent, received: received, rttsMs: rtts);
+      for (int i = 1; i < attempts; i++) {
+        sent++;
+        final stopwatch = Stopwatch()..start();
+        try {
+          await client.get(host).timeout(const Duration(seconds: 3));
+          stopwatch.stop();
+          received++;
+          rtts.add(stopwatch.elapsedMilliseconds);
+        } catch (_) {
+          stopwatch.stop();
+        }
+      }
+
+      return PingStats(host: host.host, sent: sent, received: received, rttsMs: rtts);
+    } finally {
+      client.close();
+    }
   }
 
   /// Downloads from the first reachable host over [streams] concurrent
-  /// connections and computes aggregate real throughput in Mbps. A single
-  /// TCP stream's window caps out well below what fast (100+ Mbps) links can
-  /// actually deliver — Speedtest/Fast.com/nPerf all measure this way for
-  /// the same reason.
-  static Future<SpeedResult> testDownloadSpeed({int streams = 4}) async {
+  /// connections and computes aggregate real throughput in Mbps, sustained
+  /// for [duration]. A single TCP stream's window caps out well below what
+  /// fast (100+ Mbps) links can actually deliver — Speedtest/Fast.com/nPerf
+  /// all measure this way for the same reason.
+  static Future<SpeedResult> testDownloadSpeed({
+    int streams = 4,
+    Duration duration = const Duration(seconds: 8),
+  }) async {
     for (final url in _downloadHosts) {
       final clients = List.generate(streams, (_) => http.Client());
       try {
-        final sample = await _measureParallelDownload(clients, url);
+        final sample = await _measureParallelDownload(
+          clients,
+          url,
+          maxDuration: duration,
+          // Each stream re-requests once its current response body ends
+          // (e.g. the 25MB file finishes downloading well inside `duration`
+          // on a fast link), so the attempt budget — not just the wall-clock
+          // cap — has to scale with `duration`, or a long Deep Test run gets
+          // silently cut short once streams exhaust a cap sized for the
+          // default 8s test.
+          maxAttemptsPerStream: max(25, duration.inSeconds * 5),
+        );
         if (sample != null) {
           final mbps = (sample.bytes * 8) / (sample.seconds * 1000000);
           return SpeedResult(
@@ -310,9 +327,13 @@ class NetworkTester {
   static Future<SpeedResult> testUploadSpeed({
     int chunkBytes = 512 * 1024,
     int streams = 4,
+    Duration duration = const Duration(seconds: 8),
   }) async {
-    const maxDuration = Duration(seconds: 8);
-    const maxAttemptsPerStream = 40;
+    final maxDuration = duration;
+    // Same reasoning as the download attempt cap above: scale with
+    // `duration` so a Deep Test isn't cut short once streams exhaust a
+    // budget sized for the default 8s test.
+    final maxAttemptsPerStream = max(40, duration.inSeconds * 5);
 
     final warmupClient = http.Client();
     try {

@@ -25,7 +25,16 @@ is `com.example.smart_network_diagnostic`.
     `AnimationController`), and renders the finished run's `ReportCard`
     inline below the CTAs — no separate results page/navigation. The
     report auto-expands on completion and collapses again the moment
-    "Test Again" is tapped. The top-bar history icon pushes `HistoryScreen`.
+    "Test Again" is tapped. The top-bar history icon pushes `HistoryScreen`;
+    a tune icon next to it opens `showTestSettingsSheet()` (see
+    `lib/settings/`). A third CTA, "Deep Test", calls `_startDiagnosis(deep:
+    true)`, which overrides the saved test-duration setting with a fixed
+    45s (`_deepTestDuration`) and a longer 15s bufferbloat load phase
+    (`_deepTestBufferbloatLoadDuration`) regardless of what's saved — the
+    point of tapping it is a longer, stability-focused reading, so it
+    always runs long. `_lastRunDeep` remembers whether the just-finished
+    run was a Deep Test so "Test Again" repeats the same mode; the Compare
+    flow (`_captureSnapshot()`) always uses the saved settings, never deep.
   - `wave_painter.dart` — `WavePainter`, the animated bottom activity
     waveform `CustomPainter` used by `HomeScreen`.
 - `lib/network/` — raw network measurement.
@@ -36,10 +45,14 @@ is `com.example.smart_network_diagnostic`.
       returns `PingStats` (sent/received/rtts, exposing loss %, min/avg/max,
       jitter).
     - `testDownloadSpeed()` / `testUploadSpeed()` — real GET/POST transfers
-      over `streams` (default 4) concurrent connections, summed against a
-      shared clock, since a single TCP stream caps out well below what fast
-      links can deliver. Return `SpeedResult` (success, mbps, bytes, seconds,
-      source/error).
+      over `streams` (default 4) concurrent connections for `duration`
+      (default 8s), summed against a shared clock, since a single TCP
+      stream caps out well below what fast links can deliver. Each stream's
+      internal attempt budget scales with `duration` (`max(baseline,
+      duration.inSeconds * 5)`) — otherwise a long "Deep Test" run gets
+      silently cut short once streams exhaust an attempt cap sized for the
+      8s default before the wall-clock duration is reached. Return
+      `SpeedResult` (success, mbps, bytes, seconds, source/error).
     - `testBufferbloat({required idlePing})` — saturates the link with
       concurrent download streams while pinging, and compares that loaded
       latency (median RTT, not mean — the ping probes share an isolate with
@@ -88,10 +101,28 @@ is `com.example.smart_network_diagnostic`.
   - `wifi_native_stub.dart` — no-op non-Windows counterpart to
     `wifi_native_io.dart`, selected via a conditional import
     (`'wifi_native_stub.dart' if (dart.library.io) 'wifi_native_io.dart'`).
+- `lib/settings/` — user-configurable speed test parameters.
+  - `test_settings.dart` — `TestSettings` (streams, durationSeconds, both
+    clamped — 1–8 streams, 5–60s) and `TestSettingsStore`, which persists it
+    to `shared_preferences` (mirrors `HistoryStore`'s static-class/per-call
+    `SharedPreferences.getInstance()` pattern rather than a second storage
+    mechanism). Its defaults (4 streams, 8s) intentionally match
+    `NetworkTester.testDownloadSpeed()`/`testUploadSpeed()`'s own defaults,
+    so an install that never opens the settings sheet behaves identically
+    to before this setting existed.
+  - `settings_sheet.dart` — `showTestSettingsSheet()`, a modal bottom sheet
+    with sliders for stream count and duration; saved settings apply to
+    "Start Test" and "Compare Wi-Fi vs Mobile" but not "Deep Test" (see
+    `lib/home/home_screen.dart`), which always overrides duration.
 - `lib/history/` — diagnostic history.
   - `history_entry.dart` — `HistoryEntry`, a compact JSON-serializable
     summary of one run, including an optional bufferbloat grade/increase
-    (nullable so old persisted entries without those fields still parse).
+    and an `isDeep` flag marking Deep Test runs (nullable/defaulted fields
+    so old persisted entries without them still parse). `HistoryScreen`
+    shows a "DEEP" badge next to the verdict title when set. Deep runs are
+    still plotted in `TrendChart` alongside normal 8s-default runs — a
+    45s-duration reading next to 8s ones is a deliberate simplification,
+    not an oversight; split them out if that ever misleads a real trend.
   - `history_store.dart` — `HistoryStore` persists a capped (50) list to
     `shared_preferences` under key `diagnostic_history`.
   - `history_screen.dart` — `HistoryScreen` lists past runs newest-first
