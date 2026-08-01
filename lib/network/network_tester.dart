@@ -287,6 +287,16 @@ class NetworkTester {
         } catch (_) {
           return;
         }
+        // Cloudflare rate-limits how many concurrent full-bandwidth downloads
+        // it'll serve one IP at once — with enough parallel streams every one
+        // of them can get 429'd in the same instant, which used to make this
+        // whole host attempt look dead (0 bytes) and silently fall through to
+        // a much slower/unreachable fallback host. A short backoff-and-retry
+        // survives that burst instead of throwing the whole reading away.
+        if (response.statusCode == 429) {
+          await Future.delayed(const Duration(milliseconds: 400));
+          continue;
+        }
         if (response.statusCode < 200 || response.statusCode >= 300) return;
 
         int streamBytes = 0;
@@ -370,6 +380,12 @@ class NetworkTester {
               .timeout(const Duration(seconds: 10));
         } catch (_) {
           return;
+        }
+        // Same rate-limit burst as the download path above — back off and
+        // retry instead of abandoning the stream on a 429.
+        if (response.statusCode == 429) {
+          await Future.delayed(const Duration(milliseconds: 400));
+          continue;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) return;
         totalBytes += chunkBytes;
