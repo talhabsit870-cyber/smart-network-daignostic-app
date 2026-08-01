@@ -446,6 +446,7 @@ class _HomeScreenState extends State<HomeScreen>
                             ipInfo: _ipInfo,
                             diagnosis: _diagnosis,
                             expanded: _reportExpanded,
+                            isDeep: _lastRunDeep,
                             onToggleExpanded: () =>
                                 setState(() => _reportExpanded = !_reportExpanded),
                             onRunAgain: _onRunAgain,

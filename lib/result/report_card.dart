@@ -25,6 +25,7 @@ class ReportCard extends StatelessWidget {
   final IpInfoResult? ipInfo;
   final DiagnosisResult? diagnosis;
   final bool expanded;
+  final bool isDeep;
   final VoidCallback onToggleExpanded;
   final VoidCallback onRunAgain;
   final VoidCallback onClear;
@@ -39,6 +40,7 @@ class ReportCard extends StatelessWidget {
     this.ipInfo,
     required this.diagnosis,
     required this.expanded,
+    this.isDeep = false,
     required this.onToggleExpanded,
     required this.onRunAgain,
     required this.onClear,
@@ -91,14 +93,41 @@ class ReportCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          diagnosis.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: color,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13.5),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                diagnosis.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: color,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13.5),
+                              ),
+                            ),
+                            if (isDeep) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accentSecondary
+                                      .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'DEEP',
+                                  style: TextStyle(
+                                    color: AppColors.accentSecondary,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
