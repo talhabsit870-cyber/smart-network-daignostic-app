@@ -4,6 +4,7 @@ import '../core/responsive.dart';
 import '../core/theme.dart' show AppColors;
 import '../diagnosis/diagnosis_engine.dart';
 import 'history_entry.dart';
+import 'history_export.dart';
 import 'history_store.dart';
 import 'trend_chart.dart';
 
@@ -59,6 +60,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
         foregroundColor: AppColors.textPrimary,
         title: const Text('Scan History'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Export CSV',
+            onPressed: () async {
+              final entries = await HistoryStore.load();
+              if (!context.mounted) return;
+              await shareHistoryCsv(context, entries);
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Clear history',
