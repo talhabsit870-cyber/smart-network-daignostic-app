@@ -33,8 +33,7 @@ is `com.example.smart_network_diagnostic`.
     (`_deepTestBufferbloatLoadDuration`) regardless of what's saved — the
     point of tapping it is a longer, stability-focused reading, so it
     always runs long. `_lastRunDeep` remembers whether the just-finished
-    run was a Deep Test so "Test Again" repeats the same mode; the Compare
-    flow (`_captureSnapshot()`) always uses the saved settings, never deep.
+    run was a Deep Test so "Test Again" repeats the same mode.
   - `wave_painter.dart` — `WavePainter`, the animated bottom activity
     waveform `CustomPainter` used by `HomeScreen`.
 - `lib/network/` — raw network measurement.
@@ -59,10 +58,9 @@ is `com.example.smart_network_diagnostic`.
       the saturation downloads) against `idlePing` (reused from the
       just-finished ping phase rather than re-measured). Returns
       `BufferbloatResult` (idleMs/loadedMs/increaseMs, and a Waveform-style
-      A+–F `grade`). Attached to `NetworkSnapshot.bufferbloat` on solo runs
-      only (not the Wi-Fi/mobile compare flow); deliberately kept out of
-      `DiagnosisEngine`'s verdict/blame logic — it surfaces as its own report
-      tile, not another ISP/router signal.
+      A+–F `grade`). Attached to `NetworkSnapshot.bufferbloat`; deliberately
+      kept out of `DiagnosisEngine`'s verdict/blame logic — it surfaces as
+      its own report tile, not another ISP/router signal.
     - `testPublicIpInfo()` — public IP + ISP/city/country via `ipwho.is`
       (no key, CORS-enabled); falls back to `api.ipify.org` (IP only) if
       `ipwho.is` is unreachable or rate-limited, so a single provider outage
@@ -82,10 +80,6 @@ is `com.example.smart_network_diagnostic`.
   - `evaluateSingle(NetworkSnapshot)` — single-run heuristic verdict. Checks
     `NetworkSnapshot.deviceStatus?.isLowPowerMode` first on Mobile Data runs,
     so battery-saver throttling isn't mistaken for a carrier problem.
-  - `compare(NetworkSnapshot, NetworkSnapshot)` — Wi-Fi vs mobile run
-    comparison, assigns blame to ISP/router/mobile network; also appends a
-    Low Power Mode caveat to a "mobile network issue" verdict when
-    applicable.
 - `lib/security/` — WiFi security check.
   - `security_check.dart` — `SecurityCheck.scanWiFiSecurity()` prefers a
     native OS-level read (`wifi_native_io.dart`, currently Windows via
@@ -112,8 +106,8 @@ is `com.example.smart_network_diagnostic`.
     to before this setting existed.
   - `settings_sheet.dart` — `showTestSettingsSheet()`, a modal bottom sheet
     with sliders for stream count and duration; saved settings apply to
-    "Start Test" and "Compare Wi-Fi vs Mobile" but not "Deep Test" (see
-    `lib/home/home_screen.dart`), which always overrides duration.
+    "Start Test" but not "Deep Test" (see `lib/home/home_screen.dart`),
+    which always overrides duration.
 - `lib/history/` — diagnostic history.
   - `history_entry.dart` — `HistoryEntry`, a compact JSON-serializable
     summary of one run, including an optional bufferbloat grade/increase
@@ -134,15 +128,14 @@ is `com.example.smart_network_diagnostic`.
     marker row: small dots pinned to the chart's bottom edge (not a shared
     line — loss % and Mbps are different scales) at each run with nonzero
     `HistoryEntry.lossPercent`, colored amber/coral by the same severity
-    threshold as `report_card.dart`'s ping tile. Only solo runs ever reach
-    history (`HomeScreen._finishCompare` never calls `HistoryStore.add`), so
-    the series is a single unbroken run of solo scans, not split by
+    threshold as `report_card.dart`'s ping tile. Every entry in history is a
+    solo scan, so the series is a single unbroken run, not split by
     connection type.
 - `lib/result/` — the diagnostic report, rendered inline on `HomeScreen`.
   - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
-    collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`
-    or a compare pair; renders nothing until the first run completes.
-    Replaced the old pushed `ResultScreen` page. The header's close icon
+    collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`;
+    renders nothing until the first run completes. Replaced the old pushed
+    `ResultScreen` page. The header's close icon
     calls `onClear` (wired to `HomeScreen._clearReport()`, which also resets
     the gauges) so a run can be dismissed without starting a new one. The
     body's "Download PDF" button builds a PDF via `report_pdf.dart` and
@@ -163,7 +156,7 @@ is `com.example.smart_network_diagnostic`.
     on `HomeScreen`, for download and upload).
 - `test/widget_test.dart` — targets `HomeScreen` (via `MyApp` from
   `lib/app.dart`); assertions match the idle UI text (`Download`, `Upload`
-  gauge labels, `Ready to test`, `Start Test`, `Compare Wi-Fi vs Mobile`).
+  gauge labels, `Ready to test`, `Start Test`).
 - `ScanGuard/PasswordVault/180634937/` — an empty, unexplained directory
   unrelated to the Flutter app (numeric name, no file extension, dated
   2025-07-14). Not referenced by any Dart code. Leave it alone unless the user

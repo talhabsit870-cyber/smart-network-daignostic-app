@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
 import '../core/cta_button.dart';
-import '../core/theme.dart' show AppColors, connectionIcon;
+import '../core/theme.dart' show AppColors;
 import '../diagnosis/activity_readiness.dart';
 import '../diagnosis/diagnosis_engine.dart';
 import '../network/network_tester.dart';
@@ -13,14 +13,12 @@ import 'signal_path.dart';
 /// a separate pushed page. Collapses to a one-line verdict strip via
 /// [expanded]/[onToggleExpanded] so re-running a test doesn't mean
 /// scrolling past a full report every time. Renders nothing until the first
-/// run completes ([diagnosis] null). [secondary] is only set for a compare
-/// run; [security]/[ipInfo] are only collected on a solo run. [onClear]
-/// dismisses the card back to that empty state.
+/// run completes ([diagnosis] null). [onClear] dismisses the card back to
+/// that empty state.
 class ReportCard extends StatelessWidget {
   final DateTime? timestamp;
   final String diagnosisContext;
   final NetworkSnapshot? primary;
-  final NetworkSnapshot? secondary;
   final Map<String, dynamic>? security;
   final IpInfoResult? ipInfo;
   final DiagnosisResult? diagnosis;
@@ -35,7 +33,6 @@ class ReportCard extends StatelessWidget {
     required this.timestamp,
     required this.diagnosisContext,
     required this.primary,
-    this.secondary,
     this.security,
     this.ipInfo,
     required this.diagnosis,
@@ -46,9 +43,7 @@ class ReportCard extends StatelessWidget {
     required this.onClear,
   });
 
-  bool get isCompare => secondary != null;
-
-  bool get _hasPathCheck => primary?.pathCheck != null || secondary?.pathCheck != null;
+  bool get _hasPathCheck => primary?.pathCheck != null;
 
   @override
   Widget build(BuildContext context) {
@@ -172,7 +167,7 @@ class ReportCard extends StatelessWidget {
                 children: [
                   const Divider(color: AppColors.surfaceBorder, height: 1),
                   const SizedBox(height: 14),
-                  if (isCompare) _buildCompareHero() else _buildTileRow(),
+                  _buildTileRow(context),
                   const SizedBox(height: 16),
                   SignalPath(
                       diagnosis: diagnosis, diagnosisContext: diagnosisContext),
@@ -190,12 +185,10 @@ class ReportCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     _buildPathCheckSection(),
                   ],
-                  if (!isCompare) ...[
-                    const SizedBox(height: 16),
-                    _sectionLabel('What Your Speed Supports'),
-                    const SizedBox(height: 8),
-                    _buildActivityReadinessSection(primary),
-                  ],
+                  const SizedBox(height: 16),
+                  _sectionLabel('What Your Speed Supports'),
+                  const SizedBox(height: 8),
+                  _buildActivityReadinessSection(primary),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -236,7 +229,6 @@ class ReportCard extends StatelessWidget {
         timestamp: timestamp,
         diagnosisContext: diagnosisContext,
         primary: primary,
-        secondary: secondary,
         security: security,
         ipInfo: ipInfo,
         diagnosis: diagnosis,
@@ -253,79 +245,13 @@ class ReportCard extends StatelessWidget {
   }
 
   String _collapsedSummary() {
-    if (isCompare) return diagnosisContext;
     final primary = this.primary!;
     return '${_formatSpeed(primary.download)} down · ${_formatPingShort(primary.ping)}';
   }
 
-  // ── Compare hero ─────────────────────────────────────────────────
-
-  Widget _buildCompareHero() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _snapshotCard(primary!)),
-        const SizedBox(width: 12),
-        Expanded(child: _snapshotCard(secondary!)),
-      ],
-    );
-  }
-
-  Widget _snapshotCard(NetworkSnapshot snap) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.surfaceBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(connectionIcon(snap.connectionLabel),
-                  color: AppColors.accentPrimaryGlow, size: 16),
-              const SizedBox(width: 6),
-              Text(snap.connectionLabel,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(_formatSpeed(snap.download),
-              style: TextStyle(
-                  color: _speedColor(snap.download),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18)),
-          const Text('Mbps down',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
-          const SizedBox(height: 8),
-          Text(_formatSpeed(snap.upload),
-              style: TextStyle(
-                  color: _speedColor(snap.upload),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14)),
-          const Text('Mbps up',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
-          const SizedBox(height: 8),
-          Text(_formatPingShort(snap.ping),
-              style: TextStyle(
-                  color: _lossColor(snap.ping),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13)),
-          const Text('ping',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
-        ],
-      ),
-    );
-  }
-
   // ── PRTG-style sensor tiles ──────────────────────────────────────
 
-  Widget _buildTileRow() {
+  Widget _buildTileRow(BuildContext context) {
     final primary = this.primary!;
     return Column(
       children: [
@@ -362,6 +288,9 @@ class ReportCard extends StatelessWidget {
                 security == null
                     ? AppColors.textMuted
                     : security!['color'] as Color,
+                onTap: security == null
+                    ? null
+                    : () => _showSecurityAdviceDialog(context),
               ),
             ),
           ],
@@ -370,8 +299,9 @@ class ReportCard extends StatelessWidget {
     );
   }
 
-  Widget _tile(String label, String value, IconData icon, Color statusColor) {
-    return Container(
+  Widget _tile(String label, String value, IconData icon, Color statusColor,
+      {VoidCallback? onTap}) {
+    final tile = Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
@@ -418,6 +348,31 @@ class ReportCard extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return tile;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: tile,
+    );
+  }
+
+  void _showSecurityAdviceDialog(BuildContext context) {
+    final label = security!['label'] as String;
+    final advice = security!['advice'] as String;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(label),
+        content: Text(advice),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -622,39 +577,9 @@ class ReportCard extends StatelessWidget {
   // ── Path check ───────────────────────────────────────────────────
 
   Widget _buildPathCheckSection() {
-    if (!isCompare) {
-      final path = primary!.pathCheck;
-      if (path == null) return const SizedBox.shrink();
-      return _pathCheckCard(path);
-    }
-
-    final primaryPath = primary!.pathCheck;
-    final secondaryPath = secondary!.pathCheck;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (primaryPath != null) ...[
-          _pathCheckLabel(primary!.connectionLabel),
-          const SizedBox(height: 6),
-          _pathCheckCard(primaryPath),
-        ],
-        if (primaryPath != null && secondaryPath != null)
-          const SizedBox(height: 12),
-        if (secondaryPath != null) ...[
-          _pathCheckLabel(secondary!.connectionLabel),
-          const SizedBox(height: 6),
-          _pathCheckCard(secondaryPath),
-        ],
-      ],
-    );
-  }
-
-  Widget _pathCheckLabel(String connectionLabel) {
-    return Text(
-      connectionLabel,
-      style: const TextStyle(
-          color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 11),
-    );
+    final path = primary!.pathCheck;
+    if (path == null) return const SizedBox.shrink();
+    return _pathCheckCard(path);
   }
 
   Widget _pathCheckCard(PathCheckResult path) {
@@ -748,13 +673,6 @@ String _formatSpeed(SpeedResult? r) {
   return "${r.mbps.toStringAsFixed(1)} Mbps";
 }
 
-Color _speedColor(SpeedResult? r) {
-  if (r == null) return AppColors.textMuted;
-  if (!r.success) return AppColors.coral;
-  if (r.mbps < 5) return AppColors.amber;
-  return AppColors.green;
-}
-
 String _formatPingShort(PingStats? p) {
   if (p == null) return "--";
   if (p.received == 0) return "Unreachable";
@@ -827,7 +745,6 @@ Color _verdictColor(DiagnosisVerdict verdict) {
     case DiagnosisVerdict.ispIssue:
       return AppColors.coral;
     case DiagnosisVerdict.routerIssue:
-    case DiagnosisVerdict.mobileIssue:
     case DiagnosisVerdict.deviceIssue:
     case DiagnosisVerdict.inconclusive:
       return AppColors.amber;
@@ -842,8 +759,6 @@ IconData _verdictIcon(DiagnosisVerdict verdict) {
       return Icons.cloud_off_rounded;
     case DiagnosisVerdict.routerIssue:
       return Icons.router_rounded;
-    case DiagnosisVerdict.mobileIssue:
-      return Icons.signal_cellular_alt_rounded;
     case DiagnosisVerdict.deviceIssue:
       return Icons.battery_alert_rounded;
     case DiagnosisVerdict.inconclusive:

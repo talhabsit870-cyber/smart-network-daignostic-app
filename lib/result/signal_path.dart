@@ -17,9 +17,9 @@ class ChainNode {
 /// Turns DiagnosisEngine's verdict into a visual fault chain — Device →
 /// Router/Signal → ISP/Carrier → Internet — instead of leaving the root
 /// cause as prose only. Node states err on what each verdict actually
-/// proves: e.g. a router-issue verdict comes from compare(), which means
-/// the mobile run already confirmed the ISP/Internet are reachable, so
-/// those hops are marked healthy rather than merely "not blamed".
+/// proves: e.g. a router-issue verdict backed by path-check evidence means
+/// the gateway hop specifically was slow, so the ISP/Internet hops are
+/// marked healthy rather than merely "not blamed".
 class SignalPath extends StatelessWidget {
   final DiagnosisResult diagnosis;
   final String diagnosisContext; // 'Wi-Fi' or 'Mobile Data'
@@ -52,10 +52,6 @@ class SignalPath extends StatelessWidget {
         break;
       case DiagnosisVerdict.routerIssue:
         local = ChainState.faulty;
-        break;
-      case DiagnosisVerdict.mobileIssue:
-        local = ChainState.faulty;
-        provider = ChainState.unknown;
         break;
       case DiagnosisVerdict.ispIssue:
         provider = ChainState.faulty;

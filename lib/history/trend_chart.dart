@@ -7,9 +7,9 @@ import 'history_entry.dart';
 /// runs, so a trend (a slow decline, a one-off dip) is visible at a glance
 /// instead of scrolling a list comparing numbers by eye. [entries] is
 /// expected oldest-first — [HistoryScreen] reverses `HistoryStore`'s
-/// newest-first order before handing entries here. Only solo runs land in
-/// history (`_finishCompare` never calls `HistoryStore.add`), so the series
-/// is a single unbroken run of solo scans, not split by connection type.
+/// newest-first order before handing entries here. Every entry in history
+/// is a solo scan, so the series is a single unbroken run, not split by
+/// connection type.
 class TrendChart extends StatelessWidget {
   final List<HistoryEntry> entries;
 

@@ -24,7 +24,7 @@ import 'wave_painter.dart';
 const _deepTestDuration = Duration(seconds: 45);
 const _deepTestBufferbloatLoadDuration = Duration(seconds: 15);
 
-/// The launcher screen: idle dial, connection badge, Start/Compare, and —
+/// The launcher screen: idle dial, connection badge, Start Test CTA, and —
 /// once a run finishes — the full report ([ReportCard]) inline below,
 /// expandable in place instead of pushed to its own page.
 class HomeScreen extends StatefulWidget {
@@ -37,14 +37,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   bool _isDiagnosing = false;
-  bool _isComparing = false;
   double _speedValue = 0; // Mbps, drives the download needle
   double _uploadValue = 0; // Mbps, drives the upload needle
   String _phaseLabel = "Ready to test";
   String _connectionLabel = "--";
 
   NetworkSnapshot? _primarySnapshot;
-  NetworkSnapshot? _secondarySnapshot;
   Map<String, dynamic>? _security;
   IpInfoResult? _ipInfo;
   DiagnosisResult? _diagnosis;
@@ -102,29 +100,6 @@ class _HomeScreenState extends State<HomeScreen>
     if (mounted) {
       setState(() => _connectionLabel = DiagnosisEngine.labelFor(connectivity));
     }
-  }
-
-  Future<NetworkSnapshot> _captureSnapshot() async {
-    final download = await NetworkTester.testDownloadSpeed(
-      streams: _testSettings.streams,
-      duration: _testSettings.duration,
-    );
-    final upload = await NetworkTester.testUploadSpeed(
-      streams: _testSettings.streams,
-      duration: _testSettings.duration,
-    );
-    final ping = await NetworkTester.testPingDetailed();
-    final pathCheck = await NetworkTester.testNetworkPath();
-    final connectivity = await Connectivity().checkConnectivity();
-    final deviceStatus = await DeviceStatus.capture();
-    return NetworkSnapshot(
-      connectionLabel: DiagnosisEngine.labelFor(connectivity),
-      ping: ping,
-      download: download,
-      upload: upload,
-      deviceStatus: deviceStatus,
-      pathCheck: pathCheck,
-    );
   }
 
   Future<void> _startDiagnosis({bool deep = false}) async {
@@ -212,7 +187,6 @@ class _HomeScreenState extends State<HomeScreen>
       _isDiagnosing = false;
       _phaseLabel = "Ready to test";
       _primarySnapshot = snapshot;
-      _secondarySnapshot = null;
       _security = security;
       _ipInfo = ipInfo;
       _diagnosis = diagnosis;
@@ -284,96 +258,14 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _applySnapshotToGauges(NetworkSnapshot snap) {
-    _speedValue = snap.download.success ? snap.download.mbps : 0;
-    _uploadValue = snap.upload.success ? snap.upload.mbps : 0;
-    _needleController.forward(from: 0);
-    _uploadNeedleController.forward(from: 0);
-  }
-
-  Future<void> _startCompare() async {
-    setState(() {
-      _isComparing = true;
-      _lastRunDeep = false;
-      _speedValue = 0;
-      _uploadValue = 0;
-    });
-    final baseline = await _captureSnapshot();
-    if (!mounted) return;
-    setState(() {
-      _isComparing = false;
-      _applySnapshotToGauges(baseline);
-    });
-
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('First run captured',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: Text(
-          'Captured on ${baseline.connectionLabel}: '
-          '${baseline.download.success ? '${baseline.download.mbps.toStringAsFixed(1)} Mbps down' : 'download failed'}, '
-          '${baseline.ping.avgMs?.toStringAsFixed(0) ?? '--'}ms ping.\n\n'
-          'Now switch this device to a different connection (toggle Wi-Fi off '
-          'for mobile data, or back on) and tap Continue to run the second test.',
-          style: const TextStyle(color: AppColors.textMuted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style:
-                FilledButton.styleFrom(backgroundColor: AppColors.accentPrimary),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _finishCompare(baseline);
-            },
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _finishCompare(NetworkSnapshot baseline) async {
-    setState(() => _isComparing = true);
-    final second = await _captureSnapshot();
-    final result = DiagnosisEngine.compare(baseline, second);
-    final diagnosisContext =
-        result.verdict == DiagnosisVerdict.mobileIssue ? 'Mobile Data' : 'Wi-Fi';
-
-    if (!mounted) return;
-    setState(() {
-      _isComparing = false;
-      _applySnapshotToGauges(second);
-      _primarySnapshot = baseline;
-      _secondarySnapshot = second;
-      _security = null;
-      _ipInfo = null;
-      _diagnosis = result;
-      _resultTimestamp = DateTime.now();
-      _diagnosisContext = diagnosisContext;
-      _reportExpanded = true;
-    });
-  }
-
   void _onRunAgain() {
     setState(() => _reportExpanded = false);
-    if (_secondarySnapshot != null) {
-      _startCompare();
-    } else {
-      _startDiagnosis(deep: _lastRunDeep);
-    }
+    _startDiagnosis(deep: _lastRunDeep);
   }
 
   void _clearReport() {
     setState(() {
       _primarySnapshot = null;
-      _secondarySnapshot = null;
       _security = null;
       _ipInfo = null;
       _diagnosis = null;
@@ -386,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  bool get busy => _isDiagnosing || _isComparing;
+  bool get busy => _isDiagnosing;
 
   @override
   Widget build(BuildContext context) {
@@ -422,14 +314,6 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           const SizedBox(height: 10),
                           SecondaryCtaButton(
-                            icon: Icons.compare_arrows,
-                            label: _isComparing
-                                ? "Comparing..."
-                                : "Compare Wi-Fi vs Mobile",
-                            onPressed: busy ? null : _startCompare,
-                          ),
-                          const SizedBox(height: 10),
-                          SecondaryCtaButton(
                             icon: Icons.speed,
                             label: _isDiagnosing && _lastRunDeep
                                 ? "Running Deep Test..."
@@ -441,7 +325,6 @@ class _HomeScreenState extends State<HomeScreen>
                             timestamp: _resultTimestamp,
                             diagnosisContext: _diagnosisContext,
                             primary: _primarySnapshot,
-                            secondary: _secondarySnapshot,
                             security: _security,
                             ipInfo: _ipInfo,
                             diagnosis: _diagnosis,

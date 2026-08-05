@@ -51,7 +51,7 @@ class _TestSettingsSheetState extends State<_TestSettingsSheet> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Applies to Start Test and Compare. Deep Test always runs longer, '
+              'Applies to Start Test. Deep Test always runs longer, '
               'regardless of this duration.',
               style: TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),

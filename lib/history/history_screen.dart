@@ -37,7 +37,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case DiagnosisVerdict.ispIssue:
         return AppColors.coral;
       case DiagnosisVerdict.routerIssue:
-      case DiagnosisVerdict.mobileIssue:
       case DiagnosisVerdict.deviceIssue:
         return AppColors.amber;
       case DiagnosisVerdict.inconclusive:

@@ -61,13 +61,11 @@ Future<Uint8List> buildReportPdf({
   required DateTime? timestamp,
   required String diagnosisContext,
   required NetworkSnapshot primary,
-  NetworkSnapshot? secondary,
   Map<String, dynamic>? security,
   IpInfoResult? ipInfo,
   required DiagnosisResult diagnosis,
 }) async {
   final doc = pw.Document();
-  final isCompare = secondary != null;
   final verdictColor = _verdictColor(diagnosis.verdict);
 
   final pageTheme = pw.PageTheme(
@@ -98,18 +96,16 @@ Future<Uint8List> buildReportPdf({
         pw.SizedBox(height: 22),
         _sectionLabel('Metrics'),
         pw.SizedBox(height: 8),
-        isCompare
-            ? _compareCard(primary, secondary)
-            : _soloCard(primary, security),
+        _soloCard(primary, security),
         pw.SizedBox(height: 22),
         _sectionLabel('Details'),
         pw.SizedBox(height: 8),
         _detailsCard(primary, ipInfo),
-        if (primary.pathCheck != null || secondary?.pathCheck != null) ...[
+        if (primary.pathCheck != null) ...[
           pw.NewPage(),
           _sectionLabel('Path Check'),
           pw.SizedBox(height: 8),
-          _pathCheckSection(primary, secondary),
+          _pathCheckSection(primary),
         ],
       ],
     ),
@@ -271,67 +267,6 @@ pw.Widget _soloCard(NetworkSnapshot primary, Map<String, dynamic>? security) {
   ]);
 }
 
-pw.Widget _compareCard(NetworkSnapshot primary, NetworkSnapshot secondary) {
-  return pw.Row(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: [
-      pw.Expanded(child: _compareSnapshotCard('Run 1', primary)),
-      pw.SizedBox(width: 12),
-      pw.Expanded(child: _compareSnapshotCard('Run 2', secondary)),
-    ],
-  );
-}
-
-pw.Widget _compareSnapshotCard(String label, NetworkSnapshot snap) {
-  return pw.Container(
-    width: double.infinity,
-    padding: const pw.EdgeInsets.all(14),
-    decoration: pw.BoxDecoration(
-      color: _Palette.surface,
-      borderRadius: pw.BorderRadius.circular(12),
-      border: pw.Border.all(color: _Palette.surfaceBorder),
-    ),
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(label.toUpperCase(),
-            style: pw.TextStyle(
-                fontSize: 8,
-                color: _Palette.accentPrimaryGlow,
-                letterSpacing: 1.2,
-                fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 4),
-        pw.Text(snap.connectionLabel,
-            style: pw.TextStyle(
-                fontSize: 11,
-                fontWeight: pw.FontWeight.bold,
-                color: _Palette.textPrimary)),
-        pw.SizedBox(height: 10),
-        pw.Text(_formatSpeed(snap.download),
-            style: pw.TextStyle(
-                fontSize: 17,
-                fontWeight: pw.FontWeight.bold,
-                color: _speedColor(snap.download))),
-        pw.Text('Mbps down', style: pw.TextStyle(fontSize: 8.5, color: _Palette.textMuted)),
-        pw.SizedBox(height: 8),
-        pw.Text(_formatSpeed(snap.upload),
-            style: pw.TextStyle(
-                fontSize: 13,
-                fontWeight: pw.FontWeight.bold,
-                color: _speedColor(snap.upload))),
-        pw.Text('Mbps up', style: pw.TextStyle(fontSize: 8.5, color: _Palette.textMuted)),
-        pw.SizedBox(height: 8),
-        pw.Text(_formatPing(snap.ping),
-            style: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-                color: _lossColor(snap.ping))),
-        pw.Text('ping', style: pw.TextStyle(fontSize: 8.5, color: _Palette.textMuted)),
-      ],
-    ),
-  );
-}
-
 pw.Widget _detailsCard(NetworkSnapshot primary, IpInfoResult? ipInfo) {
   final ping = primary.ping;
   final device = primary.deviceStatus;
@@ -372,42 +307,9 @@ pw.Widget _detailsCard(NetworkSnapshot primary, IpInfoResult? ipInfo) {
 
 // ── Path check ───────────────────────────────────────────────────
 
-pw.Widget _pathCheckSection(NetworkSnapshot primary, NetworkSnapshot? secondary) {
-  if (secondary == null) {
-    final path = primary.pathCheck;
-    return path == null ? pw.SizedBox.shrink() : _pathCheckCard(path);
-  }
-
-  final primaryPath = primary.pathCheck;
-  final secondaryPath = secondary.pathCheck;
-  return pw.Row(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: [
-      if (primaryPath != null)
-        pw.Expanded(
-            child: _labeledPathCard(primary.connectionLabel, primaryPath)),
-      if (primaryPath != null && secondaryPath != null) pw.SizedBox(width: 12),
-      if (secondaryPath != null)
-        pw.Expanded(
-            child: _labeledPathCard(secondary.connectionLabel, secondaryPath)),
-    ],
-  );
-}
-
-pw.Widget _labeledPathCard(String connectionLabel, PathCheckResult path) {
-  return pw.Column(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: [
-      pw.Text(connectionLabel.toUpperCase(),
-          style: pw.TextStyle(
-              fontSize: 8,
-              color: _Palette.accentPrimaryGlow,
-              letterSpacing: 1.2,
-              fontWeight: pw.FontWeight.bold)),
-      pw.SizedBox(height: 4),
-      _pathCheckCard(path),
-    ],
-  );
+pw.Widget _pathCheckSection(NetworkSnapshot primary) {
+  final path = primary.pathCheck;
+  return path == null ? pw.SizedBox.shrink() : _pathCheckCard(path);
 }
 
 pw.Widget _pathCheckCard(PathCheckResult path) {
@@ -529,7 +431,6 @@ PdfColor _verdictColor(DiagnosisVerdict verdict) {
     case DiagnosisVerdict.ispIssue:
       return _Palette.coral;
     case DiagnosisVerdict.routerIssue:
-    case DiagnosisVerdict.mobileIssue:
     case DiagnosisVerdict.deviceIssue:
     case DiagnosisVerdict.inconclusive:
       return _Palette.amber;

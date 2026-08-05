@@ -7,7 +7,6 @@ enum DiagnosisVerdict {
   allGood,
   ispIssue,
   routerIssue,
-  mobileIssue,
   deviceIssue,
   inconclusive,
 }
@@ -77,7 +76,8 @@ class DiagnosisEngine {
   }
 
   /// Enough signal to flag a problem, not enough to pin the blame on ISP vs
-  /// router — that needs [compare].
+  /// router with certainty — see [_applyPathCheck] for the evidence that can
+  /// narrow it down further.
   static DiagnosisResult _evaluateBase(NetworkSnapshot snapshot) {
     final ping = snapshot.ping;
     final download = snapshot.download;
@@ -116,7 +116,7 @@ class DiagnosisEngine {
         detail: '${ping.lossPercent.toStringAsFixed(0)}% packet loss, '
             '${ping.avgMs?.toStringAsFixed(0) ?? '--'}ms average latency on ${snapshot.connectionLabel}.',
         recommendation: 'This level of loss/latency usually means an ISP-side '
-            'problem. Run "Compare Wi-Fi vs Mobile" to confirm before calling your ISP.',
+            'problem. Contact your ISP if it persists.',
       );
     }
 
@@ -127,9 +127,8 @@ class DiagnosisEngine {
         detail: '${download.success ? '${download.mbps.toStringAsFixed(1)} Mbps download' : 'download failed'}, '
             '${ping.avgMs?.toStringAsFixed(0) ?? '--'}ms ping, '
             '${ping.lossPercent.toStringAsFixed(0)}% loss on ${snapshot.connectionLabel}.',
-        recommendation: 'Could be your router, your ISP, or this device. Tap '
-            '"Compare Wi-Fi vs Mobile" to run the same test on the other '
-            'connection and pinpoint the cause.',
+        recommendation: 'Could be your router, your ISP, or this device. Try '
+            'restarting your router, then re-run the test.',
       );
     }
 
@@ -230,137 +229,5 @@ class DiagnosisEngine {
     }
 
     return base;
-  }
-
-  /// Compares a Wi-Fi run and a Mobile Data run, then appends a note-only
-  /// comparison of each side's path-check target latency when both runs
-  /// have one — see [_appendPathCompareNote]. Never changes the verdict
-  /// [_compareBase] already produced.
-  static DiagnosisResult compare(NetworkSnapshot a, NetworkSnapshot b) {
-    final base = _compareBase(a, b);
-    return _appendPathCompareNote(base, a, b);
-  }
-
-  /// Assigns blame per the classic ISP/Router/Device rule table:
-  /// Wi-Fi slow + Mobile fast -> router issue.
-  /// Both slow -> ISP issue.
-  /// Mobile slow + Wi-Fi fast -> mobile network issue.
-  static DiagnosisResult _compareBase(NetworkSnapshot a, NetworkSnapshot b) {
-    final wifi = a.connectionLabel == 'Wi-Fi'
-        ? a
-        : (b.connectionLabel == 'Wi-Fi' ? b : null);
-    final mobile = a.connectionLabel == 'Mobile Data'
-        ? a
-        : (b.connectionLabel == 'Mobile Data' ? b : null);
-
-    if (wifi == null || mobile == null) {
-      return DiagnosisResult(
-        verdict: DiagnosisVerdict.inconclusive,
-        title: 'Need one Wi-Fi run and one Mobile Data run',
-        detail: 'Got "${a.connectionLabel}" and "${b.connectionLabel}" — '
-            'both tests used the same connection type.',
-        recommendation: 'Switch this device to the other connection type '
-            'between runs and try again.',
-      );
-    }
-
-    final wifiSlow = wifi.isSlow;
-    final mobileSlow = mobile.isSlow;
-
-    if (wifiSlow && !mobileSlow) {
-      return DiagnosisResult(
-        verdict: DiagnosisVerdict.routerIssue,
-        title: 'Router issue',
-        detail: 'Wi-Fi is slow (${wifi.download.mbps.toStringAsFixed(1)} Mbps, '
-            '${wifi.ping.lossPercent.toStringAsFixed(0)}% loss) but mobile data '
-            'is fine (${mobile.download.mbps.toStringAsFixed(1)} Mbps).',
-        recommendation: 'Restart your router, move closer to it, or check for '
-            'interference. Your ISP connection itself is fine.',
-      );
-    }
-
-    if (wifiSlow && mobileSlow) {
-      return DiagnosisResult(
-        verdict: DiagnosisVerdict.ispIssue,
-        title: 'ISP issue',
-        detail: 'Both Wi-Fi (${wifi.download.mbps.toStringAsFixed(1)} Mbps) and '
-            'mobile data (${mobile.download.mbps.toStringAsFixed(1)} Mbps) are slow or unstable.',
-        recommendation: 'This points to an outage or congestion upstream of '
-            'your router. Contact your ISP.',
-      );
-    }
-
-    if (mobileSlow && !wifiSlow) {
-      final lowPower = mobile.deviceStatus?.isLowPowerMode == true;
-      return DiagnosisResult(
-        verdict: DiagnosisVerdict.mobileIssue,
-        title: 'Mobile network issue',
-        detail: 'Mobile data (${mobile.download.mbps.toStringAsFixed(1)} Mbps) is slow '
-            'but Wi-Fi (${wifi.download.mbps.toStringAsFixed(1)} Mbps) is fine.'
-            '${lowPower ? ' This device was in battery saver / Low Power Mode '
-                'during the mobile run — that alone can throttle data and mimic '
-                'a carrier issue.' : ''}',
-        recommendation: lowPower
-            ? 'Turn off Low Power Mode / battery saver and re-run before '
-                'concluding it\'s carrier congestion.'
-            : 'Likely weak cellular signal or carrier congestion — '
-                'not a home network problem.',
-      );
-    }
-
-    return DiagnosisResult(
-      verdict: DiagnosisVerdict.allGood,
-      title: 'Both connections look healthy',
-      detail: 'Wi-Fi (${wifi.download.mbps.toStringAsFixed(1)} Mbps) and mobile data '
-          '(${mobile.download.mbps.toStringAsFixed(1)} Mbps) both perform within normal range.',
-      recommendation: 'No action needed.',
-    );
-  }
-
-  /// Note-only: if both the Wi-Fi and Mobile Data runs have a successful
-  /// path check, mentions whichever side's path to the target showed higher
-  /// latency. Returns [base] unchanged whenever that data isn't available,
-  /// so this can never affect the verdict [_compareBase] already assigned.
-  static DiagnosisResult _appendPathCompareNote(
-      DiagnosisResult base, NetworkSnapshot a, NetworkSnapshot b) {
-    final wifi = a.connectionLabel == 'Wi-Fi'
-        ? a
-        : (b.connectionLabel == 'Wi-Fi' ? b : null);
-    final mobile = a.connectionLabel == 'Mobile Data'
-        ? a
-        : (b.connectionLabel == 'Mobile Data' ? b : null);
-    final wifiPath = wifi?.pathCheck;
-    final mobilePath = mobile?.pathCheck;
-    if (wifiPath == null ||
-        mobilePath == null ||
-        !wifiPath.success ||
-        !mobilePath.success ||
-        wifiPath.hops.isEmpty ||
-        mobilePath.hops.isEmpty) {
-      return base;
-    }
-
-    int? targetRtt(PathCheckResult p) {
-      final last = p.hops.last;
-      return last.timedOut ? null : last.rttMs;
-    }
-
-    final wifiTargetRtt = targetRtt(wifiPath);
-    final mobileTargetRtt = targetRtt(mobilePath);
-    if (wifiTargetRtt == null || mobileTargetRtt == null) return base;
-
-    final worseSide = wifiTargetRtt > mobileTargetRtt
-        ? 'Wi-Fi'
-        : (mobileTargetRtt > wifiTargetRtt ? 'Mobile Data' : null);
-    if (worseSide == null) return base;
-
-    return DiagnosisResult(
-      verdict: base.verdict,
-      title: base.title,
-      detail: '${base.detail} Path check: $worseSide\'s path to the target '
-          'showed higher end-to-end latency (Wi-Fi ${wifiTargetRtt}ms vs '
-          'Mobile Data ${mobileTargetRtt}ms).',
-      recommendation: base.recommendation,
-    );
   }
 }

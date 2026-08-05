@@ -14,6 +14,5 @@ void main() {
     expect(find.text('Ready to test'), findsOneWidget);
 
     expect(find.text('Start Test'), findsOneWidget);
-    expect(find.text('Compare Wi-Fi vs Mobile'), findsOneWidget);
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -53,9 +54,14 @@ class SecurityCheck {
       return {
         "label": "❓ Unable to verify",
         "color": Colors.grey,
-        "advice": "Couldn't read the WiFi network name — location "
-            "permission may be denied, or this device isn't on WiFi. "
-            "Grant location access to enable this check.",
+        "advice": kIsWeb
+            ? "Browsers don't allow web pages to read the WiFi network "
+                "name, for privacy reasons — this check isn't available "
+                "running in a browser. Open the app on Android, iOS, "
+                "macOS, or Windows to enable it."
+            : "Couldn't read the WiFi network name — location "
+                "permission may be denied, or this device isn't on WiFi. "
+                "Grant location access to enable this check.",
         "threats": <String>[],
         "hasThreat": false,
         "isSpoofed": false,

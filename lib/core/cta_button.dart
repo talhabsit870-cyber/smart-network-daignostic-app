@@ -65,7 +65,7 @@ class PrimaryCtaButton extends StatelessWidget {
 }
 
 /// The shared secondary-action pill — outlined, no fill — used for
-/// "Compare Wi-Fi vs Mobile" (home) and "Done" (result).
+/// "Download PDF" (report) and "Deep Test" (home).
 class SecondaryCtaButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
