@@ -25,15 +25,43 @@ is `com.example.smart_network_diagnostic`.
     `AnimationController`), and renders the finished run's `ReportCard`
     inline below the CTAs — no separate results page/navigation. The
     report auto-expands on completion and collapses again the moment
-    "Test Again" is tapped. The top-bar history icon pushes `HistoryScreen`;
-    a tune icon next to it opens `showTestSettingsSheet()` (see
-    `lib/settings/`). A third CTA, "Deep Test", calls `_startDiagnosis(deep:
-    true)`, which overrides the saved test-duration setting with a fixed
-    45s (`_deepTestDuration`) and a longer 15s bufferbloat load phase
-    (`_deepTestBufferbloatLoadDuration`) regardless of what's saved — the
-    point of tapping it is a longer, stability-focused reading, so it
-    always runs long. `_lastRunDeep` remembers whether the just-finished
-    run was a Deep Test so "Test Again" repeats the same mode.
+    "Test Again" is tapped (which also clears the previous report's data
+    immediately, instead of leaving it visible until the new run finishes).
+    The top-bar history icon pushes `HistoryScreen`. A third CTA, "Deep
+    Test", calls `_startDiagnosis(deep: true)`, which runs a fixed 20s
+    duration (`_deepTestDuration`) instead of the normal 8s default
+    (`_simpleTestDuration`) and a longer 12s bufferbloat load phase
+    (`_deepTestBufferbloatLoadDuration` vs `_simpleBufferbloatLoadDuration`'s
+    5s) — the point of tapping it is a longer, stability-focused reading,
+    landing around a ~60s total instead of stretching toward 90s.
+    Stream count and duration are no longer user-configurable (the old
+    `lib/settings/` module was removed) — both CTAs use
+    `NetworkTester.testDownloadSpeed()`/`testUploadSpeed()`'s built-in
+    stream default (4), only overriding `duration`. `_lastRunDeep` remembers
+    whether the just-finished run was a Deep Test so "Test Again" repeats
+    the same mode. Download, upload, ping, and bufferbloat run sequentially,
+    each getting the link to itself — measuring any of them concurrently
+    with another makes every number read artificially low, since they'd be
+    competing for the same bandwidth (this is why Ookla/Speedtest.net run
+    ping → download → upload as separate, non-overlapping phases too).
+    Bufferbloat also needs its own uncontested idle-ping baseline
+    beforehand, or its idle-vs-loaded comparison is meaningless. Only the
+    lightweight, non-bandwidth tail — security scan, path check, IP lookup —
+    runs concurrently, and only after throughput is already measured, since
+    those don't affect its accuracy. `_simpleTotalEstimate`/
+    `_deepTotalEstimate` sum every phase's own duration plus that tail, so
+    the CTA labels quote the true total instead of just the download-phase
+    duration. A "Stop Test" button (`_stopDiagnosis`) replaces both CTAs
+    while a run is
+    in progress: it force-closes every in-flight HTTP connection via a
+    `CancelToken` (`lib/network/cancel_token.dart`) and freezes the
+    `mm:ss` elapsed-time display (`_elapsedTimer`/`_elapsedSeconds`)
+    immediately, rather than waiting for the current phase to finish on its
+    own — every `NetworkTester` method already catches the resulting
+    connection-closed exception internally and returns its normal
+    failed/degraded result, so `_bailIfCancelled()`'s check after each
+    `await` resets to idle within roughly a second instead of running out
+    the remaining duration.
   - `wave_painter.dart` — `WavePainter`, the animated bottom activity
     waveform `CustomPainter` used by `HomeScreen`.
 - `lib/network/` — raw network measurement.
@@ -95,19 +123,6 @@ is `com.example.smart_network_diagnostic`.
   - `wifi_native_stub.dart` — no-op non-Windows counterpart to
     `wifi_native_io.dart`, selected via a conditional import
     (`'wifi_native_stub.dart' if (dart.library.io) 'wifi_native_io.dart'`).
-- `lib/settings/` — user-configurable speed test parameters.
-  - `test_settings.dart` — `TestSettings` (streams, durationSeconds, both
-    clamped — 1–8 streams, 5–60s) and `TestSettingsStore`, which persists it
-    to `shared_preferences` (mirrors `HistoryStore`'s static-class/per-call
-    `SharedPreferences.getInstance()` pattern rather than a second storage
-    mechanism). Its defaults (4 streams, 8s) intentionally match
-    `NetworkTester.testDownloadSpeed()`/`testUploadSpeed()`'s own defaults,
-    so an install that never opens the settings sheet behaves identically
-    to before this setting existed.
-  - `settings_sheet.dart` — `showTestSettingsSheet()`, a modal bottom sheet
-    with sliders for stream count and duration; saved settings apply to
-    "Start Test" but not "Deep Test" (see `lib/home/home_screen.dart`),
-    which always overrides duration.
 - `lib/history/` — diagnostic history.
   - `history_entry.dart` — `HistoryEntry`, a compact JSON-serializable
     summary of one run, including an optional bufferbloat grade/increase
@@ -115,7 +130,7 @@ is `com.example.smart_network_diagnostic`.
     so old persisted entries without them still parse). `HistoryScreen`
     shows a "DEEP" badge next to the verdict title when set. Deep runs are
     still plotted in `TrendChart` alongside normal 8s-default runs — a
-    45s-duration reading next to 8s ones is a deliberate simplification,
+    20s-duration reading next to 8s ones is a deliberate simplification,
     not an oversight; split them out if that ever misleads a real trend.
   - `history_store.dart` — `HistoryStore` persists a capped (50) list to
     `shared_preferences` under key `diagnostic_history`.
@@ -132,18 +147,27 @@ is `com.example.smart_network_diagnostic`.
     solo scan, so the series is a single unbroken run, not split by
     connection type.
 - `lib/result/` — the diagnostic report, rendered inline on `HomeScreen`.
-  - `report_card.dart` — `ReportCard`, an expandable card (verdict header +
+  - `report_card.dart` — `ReportCard`, an expandable card (header +
     collapsible body) built from a solo `NetworkSnapshot`/`DiagnosisResult`;
     renders nothing until the first run completes. Replaced the old pushed
-    `ResultScreen` page. The header's close icon
-    calls `onClear` (wired to `HomeScreen._clearReport()`, which also resets
-    the gauges) so a run can be dismissed without starting a new one. The
-    body's "Download PDF" button builds a PDF via `report_pdf.dart` and
-    hands it to `package:printing`'s share/save sheet. The details grid's
-    "Latency under load" row spells out the raw idle/loaded/delta numbers
-    behind the bufferbloat grade badge (`BufferbloatResult.idleMs`/
-    `loadedMs`/`increaseMs`), colored by the same grade-derived
-    good/borderline/bad logic as the badge.
+    `ResultScreen` page. Body content branches on `isDeep`: Deep Test runs
+    get the full report (verdict header/icon/color, `SignalPath`,
+    Diagnosis card, Details grid, Path Check, Activity Readiness, and the
+    "Download PDF" + "Test Again" button row); Start Test runs get a
+    trimmed "Speed Test Results" header (no verdict) and just the tile row
+    (Ping/Packet Loss/Bufferbloat/Security) plus a single "Test Again"
+    button — no PDF export, no diagnosis text, no Signal Path. Measurement
+    scope and `HistoryEntry` persistence are unaffected by this — both
+    modes still measure and save everything, this only trims what's
+    displayed. The header's close icon calls `onClear` (wired to
+    `HomeScreen._clearReport()`, which also resets the gauges) so a run
+    can be dismissed without starting a new one. The body's "Download PDF"
+    button builds a PDF via `report_pdf.dart` and hands it to
+    `package:printing`'s share/save sheet. The details grid's "Latency
+    under load" row spells out the raw idle/loaded/delta numbers behind
+    the bufferbloat grade badge (`BufferbloatResult.idleMs`/`loadedMs`/
+    `increaseMs`), colored by the same grade-derived good/borderline/bad
+    logic as the badge.
   - `report_pdf.dart` — `buildReportPdf()`, renders the same data as
     `ReportCard` through `package:pdf`'s widget set (`pw.*`) into PDF bytes,
     including the bufferbloat grade on solo runs plus the same raw

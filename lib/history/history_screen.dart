@@ -30,6 +30,34 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
+  Future<void> _confirmClearHistory(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Clear scan history?'),
+        content: const Text(
+          'This deletes all saved scans. This can\'t be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.coral),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Yes, delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await HistoryStore.clear();
+      _reload();
+    }
+  }
+
   Color _verdictColor(DiagnosisVerdict verdict) {
     switch (verdict) {
       case DiagnosisVerdict.allGood:
@@ -60,21 +88,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: const Text('Scan History'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.ios_share),
-            tooltip: 'Export CSV',
+            icon: const Icon(Icons.download_rounded),
+            tooltip: 'Download PDF',
             onPressed: () async {
               final entries = await HistoryStore.load();
               if (!context.mounted) return;
-              await shareHistoryCsv(context, entries);
+              await exportHistoryPdf(context, entries);
             },
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Clear history',
-            onPressed: () async {
-              await HistoryStore.clear();
-              _reload();
-            },
+            onPressed: () => _confirmClearHistory(context),
           ),
         ],
       ),

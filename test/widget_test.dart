@@ -13,6 +13,6 @@ void main() {
     expect(find.text('Upload'), findsOneWidget);
     expect(find.text('Ready to test'), findsOneWidget);
 
-    expect(find.text('Start Test'), findsOneWidget);
+    expect(find.textContaining('Start Test'), findsOneWidget);
   });
 }

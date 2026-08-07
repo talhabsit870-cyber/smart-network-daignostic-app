@@ -4,9 +4,11 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'cancel_token.dart';
 import 'path_check_result.dart';
 import 'path_probe_stub.dart' if (dart.library.io) 'path_probe_io.dart';
 
+export 'cancel_token.dart';
 export 'path_check_result.dart';
 
 /// Result of a batch of latency probes against a single host: how many
@@ -164,10 +166,14 @@ class NetworkTester {
   /// connection per call — that connection setup cost was being counted as
   /// "ping" and inflated every reading by a full handshake, not just actual
   /// round-trip time.
-  static Future<PingStats> testPingDetailed({int attempts = 6}) async {
+  static Future<PingStats> testPingDetailed({
+    int attempts = 6,
+    CancelToken? cancelToken,
+  }) async {
     final hosts = [_primaryPingHost, _fallbackPingHost];
 
     final client = http.Client();
+    cancelToken?.track(client);
     try {
       Uri? host;
       final rtts = <int>[];
@@ -194,6 +200,7 @@ class NetworkTester {
       }
 
       for (int i = 1; i < attempts; i++) {
+        if (cancelToken?.isCancelled == true) break;
         sent++;
         final stopwatch = Stopwatch()..start();
         try {
@@ -220,9 +227,14 @@ class NetworkTester {
   static Future<SpeedResult> testDownloadSpeed({
     int streams = 4,
     Duration duration = const Duration(seconds: 8),
+    CancelToken? cancelToken,
   }) async {
     for (final url in _downloadHosts) {
+      if (cancelToken?.isCancelled == true) break;
       final clients = List.generate(streams, (_) => http.Client());
+      for (final client in clients) {
+        cancelToken?.track(client);
+      }
       try {
         final sample = await _measureParallelDownload(
           clients,
@@ -235,6 +247,7 @@ class NetworkTester {
           // silently cut short once streams exhaust a cap sized for the
           // default 8s test.
           maxAttemptsPerStream: max(25, duration.inSeconds * 5),
+          cancelToken: cancelToken,
         );
         if (sample != null) {
           final mbps = (sample.bytes * 8) / (sample.seconds * 1000000);
@@ -270,14 +283,28 @@ class NetworkTester {
     Duration maxDuration = const Duration(seconds: 8),
     int maxBytesPerStream = 30 * 1024 * 1024,
     int maxAttemptsPerStream = 25,
+    CancelToken? cancelToken,
   }) async {
     final stopwatch = Stopwatch();
+    // `stopwatch` above deliberately only starts on the first byte, so
+    // connection setup never counts against the measured transfer duration.
+    // But that means it can't also bound the *retry* loop below — before any
+    // byte has ever arrived, `!stopwatch.isRunning` is unconditionally true,
+    // so a stream stuck retrying transient statuses (429/502/503/504) would
+    // only be capped by `maxAttemptsPerStream`, not by wall-clock time. On a
+    // host serving sustained 503s that's `maxAttemptsPerStream` retries at
+    // ~request-time+400ms each — tens of seconds past the intended
+    // `maxDuration`. This second, unconditionally-running clock caps that.
+    final wallClock = Stopwatch()..start();
+    final wallClockBudget = maxDuration + const Duration(seconds: 5);
     int totalBytes = 0;
 
     Future<void> runStream(http.Client client) async {
       int attempts = 0;
       while (attempts < maxAttemptsPerStream &&
-          (!stopwatch.isRunning || stopwatch.elapsed < maxDuration)) {
+          wallClock.elapsed < wallClockBudget &&
+          (!stopwatch.isRunning || stopwatch.elapsed < maxDuration) &&
+          cancelToken?.isCancelled != true) {
         attempts++;
         http.StreamedResponse response;
         try {
@@ -289,11 +316,14 @@ class NetworkTester {
         }
         // Cloudflare rate-limits how many concurrent full-bandwidth downloads
         // it'll serve one IP at once — with enough parallel streams every one
-        // of them can get 429'd in the same instant, which used to make this
-        // whole host attempt look dead (0 bytes) and silently fall through to
-        // a much slower/unreachable fallback host. A short backoff-and-retry
-        // survives that burst instead of throwing the whole reading away.
-        if (response.statusCode == 429) {
+        // of them can get 429'd (or 502/503/504'd under heavier load) in the
+        // same instant. Treating only 429 as transient used to let a single
+        // 503 permanently kill that stream for the rest of the run — with 4
+        // streams racing the same endpoint, that reliably collapsed 3 of 4
+        // streams to zero bytes and reported roughly a lone stream's
+        // throughput as the whole link's speed. A short backoff-and-retry on
+        // every transient status keeps all streams contributing instead.
+        if (_isTransientStatus(response.statusCode)) {
           await Future.delayed(const Duration(milliseconds: 400));
           continue;
         }
@@ -301,7 +331,13 @@ class NetworkTester {
 
         int streamBytes = 0;
         try {
-          await for (final chunk in response.stream) {
+          // A stalled connection that never sends another byte (but never
+          // closes either) would otherwise block this loop forever — the
+          // wall-clock check below only runs when a chunk arrives. `.timeout`
+          // resets on every chunk and throws if the gap between them exceeds
+          // this window, which the outer catch turns into a normal early return.
+          await for (final chunk
+              in response.stream.timeout(const Duration(seconds: 10))) {
             if (!stopwatch.isRunning) stopwatch.start();
             totalBytes += chunk.length;
             streamBytes += chunk.length;
@@ -338,6 +374,7 @@ class NetworkTester {
     int chunkBytes = 512 * 1024,
     int streams = 4,
     Duration duration = const Duration(seconds: 8),
+    CancelToken? cancelToken,
   }) async {
     final maxDuration = duration;
     // Same reasoning as the download attempt cap above: scale with
@@ -346,6 +383,7 @@ class NetworkTester {
     final maxAttemptsPerStream = max(40, duration.inSeconds * 5);
 
     final warmupClient = http.Client();
+    cancelToken?.track(warmupClient);
     try {
       await warmupClient
           .post(
@@ -362,12 +400,17 @@ class NetworkTester {
 
     final payload = _randomPayload(chunkBytes);
     final clients = List.generate(streams, (_) => http.Client());
+    for (final client in clients) {
+      cancelToken?.track(client);
+    }
     final stopwatch = Stopwatch()..start();
     int totalBytes = 0;
 
     Future<void> runStream(http.Client client) async {
       int attempts = 0;
-      while (attempts < maxAttemptsPerStream && stopwatch.elapsed < maxDuration) {
+      while (attempts < maxAttemptsPerStream &&
+          stopwatch.elapsed < maxDuration &&
+          cancelToken?.isCancelled != true) {
         attempts++;
         http.Response response;
         try {
@@ -382,8 +425,8 @@ class NetworkTester {
           return;
         }
         // Same rate-limit burst as the download path above — back off and
-        // retry instead of abandoning the stream on a 429.
-        if (response.statusCode == 429) {
+        // retry instead of abandoning the stream on a transient status.
+        if (_isTransientStatus(response.statusCode)) {
           await Future.delayed(const Duration(milliseconds: 400));
           continue;
         }
@@ -426,6 +469,7 @@ class NetworkTester {
     required PingStats idlePing,
     Duration loadDuration = const Duration(seconds: 5),
     int saturationStreams = 3,
+    CancelToken? cancelToken,
   }) async {
     final idleMs = idlePing.avgMs;
     if (idleMs == null) {
@@ -434,12 +478,16 @@ class NetworkTester {
 
     final saturationClients =
         List.generate(saturationStreams, (_) => http.Client());
+    for (final client in saturationClients) {
+      cancelToken?.track(client);
+    }
     final pingClient = http.Client();
+    cancelToken?.track(pingClient);
     final stopwatch = Stopwatch()..start();
     final loadedRtts = <int>[];
 
     Future<void> saturate(http.Client client) async {
-      while (stopwatch.elapsed < loadDuration) {
+      while (stopwatch.elapsed < loadDuration && cancelToken?.isCancelled != true) {
         http.StreamedResponse response;
         try {
           response = await client
@@ -448,9 +496,18 @@ class NetworkTester {
         } catch (_) {
           return;
         }
+        // A saturation stream that gives up on the first transient status
+        // (same Cloudflare rate-limit behavior as the download path above)
+        // under-loads the link, which understates bufferbloat — the loaded
+        // ping would then look better than it really is.
+        if (_isTransientStatus(response.statusCode)) {
+          await Future.delayed(const Duration(milliseconds: 400));
+          continue;
+        }
         if (response.statusCode < 200 || response.statusCode >= 300) return;
         try {
-          await for (final _ in response.stream) {
+          await for (final _
+              in response.stream.timeout(const Duration(seconds: 10))) {
             if (stopwatch.elapsed >= loadDuration) return;
           }
         } catch (_) {
@@ -503,6 +560,14 @@ class NetworkTester {
       grade: _bufferbloatGrade(increaseMs),
     );
   }
+
+  /// 429 (rate-limited) and 502/503/504 (upstream overload/unavailable) are
+  /// all transient — Cloudflare returns any of these under the same kind of
+  /// momentary load, and a stream that backs off and retries recovers just
+  /// as well from a 503 as from a 429. Anything else (4xx auth/not-found
+  /// errors) is a real failure worth abandoning the stream for.
+  static bool _isTransientStatus(int statusCode) =>
+      statusCode == 429 || statusCode == 502 || statusCode == 503 || statusCode == 504;
 
   static double _median(List<int> values) {
     final sorted = [...values]..sort();

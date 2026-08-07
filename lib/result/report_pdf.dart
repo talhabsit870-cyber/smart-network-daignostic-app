@@ -57,6 +57,10 @@ final _emojiPattern = RegExp(
 );
 String _stripEmoji(String s) => s.replaceAll(_emojiPattern, '').trim();
 
+/// Mirrors `ReportCard`'s screen trim: a Start Test (non-deep) run only ever
+/// shows the tile row (ping/loss/bufferbloat/security) with no verdict text,
+/// so the exported PDF must match — otherwise "Download PDF" surfaces a full
+/// diagnosis/verdict/path-check report the user never saw on screen.
 Future<Uint8List> buildReportPdf({
   required DateTime? timestamp,
   required String diagnosisContext,
@@ -64,6 +68,7 @@ Future<Uint8List> buildReportPdf({
   Map<String, dynamic>? security,
   IpInfoResult? ipInfo,
   required DiagnosisResult diagnosis,
+  required bool isDeep,
 }) async {
   final doc = pw.Document();
   final verdictColor = _verdictColor(diagnosis.verdict);
@@ -90,22 +95,26 @@ Future<Uint8List> buildReportPdf({
               child: pw.Container(height: 3, color: _Palette.accentSecondary)),
         ]),
         pw.SizedBox(height: 20),
-        _verdictBanner(diagnosis, verdictColor),
-        pw.SizedBox(height: 12),
-        _recommendationCallout(diagnosis.recommendation),
-        pw.SizedBox(height: 22),
+        if (isDeep) ...[
+          _verdictBanner(diagnosis, verdictColor),
+          pw.SizedBox(height: 12),
+          _recommendationCallout(diagnosis.recommendation),
+          pw.SizedBox(height: 22),
+        ],
         _sectionLabel('Metrics'),
         pw.SizedBox(height: 8),
         _soloCard(primary, security),
-        pw.SizedBox(height: 22),
-        _sectionLabel('Details'),
-        pw.SizedBox(height: 8),
-        _detailsCard(primary, ipInfo),
-        if (primary.pathCheck != null) ...[
-          pw.NewPage(),
-          _sectionLabel('Path Check'),
+        if (isDeep) ...[
+          pw.SizedBox(height: 22),
+          _sectionLabel('Details'),
           pw.SizedBox(height: 8),
-          _pathCheckSection(primary),
+          _detailsCard(primary, ipInfo),
+          if (primary.pathCheck != null) ...[
+            pw.NewPage(),
+            _sectionLabel('Path Check'),
+            pw.SizedBox(height: 8),
+            _pathCheckSection(primary),
+          ],
         ],
       ],
     ),

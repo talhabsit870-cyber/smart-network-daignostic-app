@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:printing/printing.dart';
 
 import '../core/cta_button.dart';
 import '../core/theme.dart' show AppColors;
 import '../diagnosis/activity_readiness.dart';
 import '../diagnosis/diagnosis_engine.dart';
 import '../network/network_tester.dart';
+import '../core/pdf_opener_stub.dart' if (dart.library.io) '../core/pdf_opener_io.dart';
 import 'report_pdf.dart';
 import 'signal_path.dart';
 
@@ -53,7 +53,7 @@ class ReportCard extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final color = _verdictColor(diagnosis.verdict);
+    final color = isDeep ? _verdictColor(diagnosis.verdict) : AppColors.accentPrimaryGlow;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
@@ -81,7 +81,10 @@ class ReportCard extends StatelessWidget {
                       color: color.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(_verdictIcon(diagnosis.verdict), color: color, size: 19),
+                    child: Icon(
+                        isDeep ? _verdictIcon(diagnosis.verdict) : Icons.speed_rounded,
+                        color: color,
+                        size: 19),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -92,7 +95,7 @@ class ReportCard extends StatelessWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                diagnosis.title,
+                                isDeep ? diagnosis.title : 'Speed Test Results',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -168,27 +171,29 @@ class ReportCard extends StatelessWidget {
                   const Divider(color: AppColors.surfaceBorder, height: 1),
                   const SizedBox(height: 14),
                   _buildTileRow(context),
-                  const SizedBox(height: 16),
-                  SignalPath(
-                      diagnosis: diagnosis, diagnosisContext: diagnosisContext),
-                  const SizedBox(height: 16),
-                  _sectionLabel('Diagnosis'),
-                  const SizedBox(height: 8),
-                  _buildDiagnosisCard(diagnosis),
-                  const SizedBox(height: 16),
-                  _sectionLabel('Details'),
-                  const SizedBox(height: 8),
-                  _buildDetailsGrid(primary),
-                  if (_hasPathCheck) ...[
+                  if (isDeep) ...[
                     const SizedBox(height: 16),
-                    _sectionLabel('Path Check'),
+                    SignalPath(
+                        diagnosis: diagnosis, diagnosisContext: diagnosisContext),
+                    const SizedBox(height: 16),
+                    _sectionLabel('Diagnosis'),
                     const SizedBox(height: 8),
-                    _buildPathCheckSection(),
+                    _buildDiagnosisCard(diagnosis),
+                    const SizedBox(height: 16),
+                    _sectionLabel('Details'),
+                    const SizedBox(height: 8),
+                    _buildDetailsGrid(primary),
+                    if (_hasPathCheck) ...[
+                      const SizedBox(height: 16),
+                      _sectionLabel('Path Check'),
+                      const SizedBox(height: 8),
+                      _buildPathCheckSection(),
+                    ],
+                    const SizedBox(height: 16),
+                    _sectionLabel('What Your Speed Supports'),
+                    const SizedBox(height: 8),
+                    _buildActivityReadinessSection(primary),
                   ],
-                  const SizedBox(height: 16),
-                  _sectionLabel('What Your Speed Supports'),
-                  const SizedBox(height: 8),
-                  _buildActivityReadinessSection(primary),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -232,11 +237,9 @@ class ReportCard extends StatelessWidget {
         security: security,
         ipInfo: ipInfo,
         diagnosis: diagnosis,
+        isDeep: isDeep,
       );
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'netdiagnose_report_${_filenameTimestamp(timestamp)}.pdf',
-      );
+      await saveAndOpenPdf(bytes, 'wifitestreport.pdf');
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not generate the PDF report.')),
@@ -659,12 +662,6 @@ String _formatTimestamp(DateTime? dt) {
   if (dt == null) return '--';
   String two(int n) => n.toString().padLeft(2, '0');
   return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
-}
-
-String _filenameTimestamp(DateTime? dt) {
-  final d = dt ?? DateTime.now();
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${d.year}${two(d.month)}${two(d.day)}_${two(d.hour)}${two(d.minute)}';
 }
 
 String _formatSpeed(SpeedResult? r) {
